@@ -1,0 +1,57 @@
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Editors ---
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# --- Node ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Frontend build ---
+dist/
+build/
+*.tsbuildinfo
+frontend/vite.config.d.ts
+frontend/vite.config.js
+
+# --- Env / secrets ---
+.env
+.env.local
+.env.*.local
+backend/.env
+backend/.env.local
+*.pem
+*.key
+
+# --- Runtime artifacts ---
+backend/artifacts/
+backend/uploads/
+!backend/artifacts/.gitkeep
+!backend/uploads/.gitkeep
+
+# --- Docker ---
+*.log
+docker-compose.override.yml
