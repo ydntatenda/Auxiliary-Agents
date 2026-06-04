@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -18,15 +17,12 @@ async def create_workflow_row(
     session: AsyncSession,
     name: str,
     unit: str,
-    source_modality: Literal["text", "voice", "screen"],
-    source_transcript: str | None,
-    status: str,
+    status: str = "capturing",
 ) -> WorkflowRow:
     row = WorkflowRow(
         name=name,
         unit=unit,
-        source_modality=source_modality,
-        source_transcript=source_transcript,
+        assembled_transcript=None,
         status=status,
         graph=None,
     )
@@ -51,17 +47,30 @@ async def update_status(
     *,
     workflow_id: str | UUID,
     status: str,
-    source_transcript: str | None = None,
+    assembled_transcript: str | None = None,
     graph: Workflow | None = None,
 ) -> None:
     async with async_session() as session:
         row = await require_workflow_row(session, workflow_id)
         row.status = status
-        row.updated_at = datetime.utcnow()
-        if source_transcript is not None:
-            row.source_transcript = source_transcript
+        if assembled_transcript is not None:
+            row.assembled_transcript = assembled_transcript
         if graph is not None:
             row.graph = graph.model_dump(mode="json")
+        await session.commit()
+
+
+async def set_assembled_transcript(
+    workflow_id: str | UUID, assembled_transcript: str
+) -> None:
+    """Single writer for the assembled_transcript cache.
+
+    Only the assembly step calls this. assembled_transcript is a cache
+    derived from ready sources, not a separate truth.
+    """
+    async with async_session() as session:
+        row = await require_workflow_row(session, workflow_id)
+        row.assembled_transcript = assembled_transcript
         await session.commit()
 
 
@@ -74,16 +83,13 @@ async def load_workflow(workflow_id: str | UUID) -> Workflow:
 
 
 async def save_workflow(workflow: Workflow, status: str | None = None) -> None:
-    workflow.updated_at = datetime.utcnow()
     async with async_session() as session:
         row = await require_workflow_row(session, workflow.id)
         row.graph = workflow.model_dump(mode="json")
         row.name = workflow.name
         row.unit = workflow.unit
-        row.source_transcript = workflow.source_transcript
         if status is not None:
             row.status = status
-        row.updated_at = workflow.updated_at
         await session.commit()
 
 
@@ -109,4 +115,3 @@ async def load_clarification_history(
         .order_by(ClarificationHistoryRow.created_at.asc())
     )
     return list((await session.execute(stmt)).scalars().all())
-

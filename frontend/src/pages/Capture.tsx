@@ -45,7 +45,7 @@ const modalities: Array<{
 export default function Capture({ onCaptured }: Props) {
   const [mode, setMode] = useState<Mode>("text");
   const [name, setName] = useState("Citation appeals processing");
-  const [unit, setUnit] = useState("GT P&T");
+  const [unit, setUnit] = useState("");
   const [text, setText] = useState("");
   const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
   const [screenBlob, setScreenBlob] = useState<Blob | null>(null);

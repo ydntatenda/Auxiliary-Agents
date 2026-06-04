@@ -1,8 +1,12 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class DecisionRule(BaseModel):
@@ -47,8 +51,8 @@ class Workflow(BaseModel):
     gaps: list[Gap] = Field(default_factory=list)
     source_modality: Literal["text", "voice", "screen"]
     source_transcript: str
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
 
     def find_step(self, step_id: str) -> Step | None:
         return next((step for step in self.steps if step.id == step_id), None)
