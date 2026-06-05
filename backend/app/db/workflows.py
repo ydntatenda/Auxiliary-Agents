@@ -60,20 +60,6 @@ async def update_status(
         await session.commit()
 
 
-async def set_assembled_transcript(
-    workflow_id: str | UUID, assembled_transcript: str
-) -> None:
-    """Single writer for the assembled_transcript cache.
-
-    Only the assembly step calls this. assembled_transcript is a cache
-    derived from ready sources, not a separate truth.
-    """
-    async with async_session() as session:
-        row = await require_workflow_row(session, workflow_id)
-        row.assembled_transcript = assembled_transcript
-        await session.commit()
-
-
 async def load_workflow(workflow_id: str | UUID) -> Workflow:
     async with async_session() as session:
         row = await require_workflow_row(session, workflow_id)
