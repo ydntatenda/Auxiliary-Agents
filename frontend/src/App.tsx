@@ -1,16 +1,37 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+import {
+  CurrentUser,
+  DeltaScope,
+  getMe,
+} from "./api/client";
+import { Subbar, Topbar } from "./components/Shell";
 import Capture from "./pages/Capture";
 import Clarify from "./pages/Clarify";
+import Library from "./pages/Library";
 import Processing from "./pages/Processing";
 import Sop from "./pages/Sop";
-import { Subbar, Topbar } from "./components/Shell";
 
-type Stage = "capture" | "processing" | "clarify" | "sop";
+type Stage = "library" | "capture" | "processing" | "clarify" | "sop";
+
+export type UpdateContext = {
+  workflowId: string;
+  scope: DeltaScope | null;
+};
 
 export default function App() {
-  const [stage, setStage] = useState<Stage>("capture");
+  const [stage, setStage] = useState<Stage>("library");
   const [workflowId, setWorkflowId] = useState<string | null>(null);
   const [needsProcessing, setNeedsProcessing] = useState(false);
+  const [updateContext, setUpdateContext] = useState<UpdateContext | null>(null);
+  const [user, setUser] = useState<CurrentUser | null>(null);
+  const [initialDetailId, setInitialDetailId] = useState<string | null>(null);
+
+  useEffect(() => {
+    getMe()
+      .then(setUser)
+      .catch(() => setUser(null));
+  }, []);
 
   function handleCaptured(id: string, processing: boolean) {
     setWorkflowId(id);
@@ -18,9 +39,33 @@ export default function App() {
     setStage("processing");
   }
 
-  function reset() {
+  function backToLibrary() {
     setWorkflowId(null);
     setNeedsProcessing(false);
+    setUpdateContext(null);
+    setInitialDetailId(null);
+    setStage("library");
+  }
+
+  function openWorkflowInDetail(id: string) {
+    setInitialDetailId(id);
+    setStage("library");
+  }
+
+  function startNewWorkflow() {
+    setUpdateContext(null);
+    setStage("capture");
+  }
+
+  function addSourcesToExisting(id: string) {
+    setWorkflowId(id);
+    setUpdateContext({ workflowId: id, scope: null });
+    setStage("capture");
+  }
+
+  function updateExisting(id: string, scope: DeltaScope) {
+    setWorkflowId(id);
+    setUpdateContext({ workflowId: id, scope });
     setStage("capture");
   }
 
@@ -36,14 +81,40 @@ export default function App() {
 
   return (
     <main className="app">
-      <Topbar />
-      <Subbar stage={stage} workflowId={workflowId} />
+      <Topbar user={user} onOpenWorkflow={openWorkflowInDetail} />
+      <Subbar stage={stage} workflowId={workflowId} onBack={backToLibrary} />
 
-      {stage === "capture" && <Capture onCaptured={handleCaptured} />}
-      {stage === "clarify" && workflowId && (
-        <Clarify workflowId={workflowId} onReadyForSop={() => setStage("sop")} />
+      {stage === "library" && user && (
+        <Library
+          user={user}
+          initialWorkflowId={initialDetailId}
+          onNewWorkflow={startNewWorkflow}
+          onUpdateFlow={updateExisting}
+          onAddSources={addSourcesToExisting}
+        />
       )}
-      {stage === "sop" && workflowId && <Sop workflowId={workflowId} onStartOver={reset} />}
+      {stage === "library" && !user && (
+        <div className="workarea">
+          <div className="canvas">
+            <div className="lib-state">Loading session.</div>
+          </div>
+        </div>
+      )}
+      {stage === "capture" && (
+        <Capture
+          onCaptured={handleCaptured}
+          updateContext={updateContext}
+        />
+      )}
+      {stage === "clarify" && workflowId && (
+        <Clarify
+          workflowId={workflowId}
+          onReadyForSop={() => setStage("sop")}
+        />
+      )}
+      {stage === "sop" && workflowId && (
+        <Sop workflowId={workflowId} onStartOver={backToLibrary} />
+      )}
     </main>
   );
 }

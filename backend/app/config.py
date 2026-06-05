@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     openai_render_model: str = "gpt-5.4"
     openai_clarification_model: str = "gpt-5.4"
     openai_transcription_model: str = "whisper-1"
+    openai_embedding_model: str = "text-embedding-3-small"
     gemini_video_model: str = "gemini-2.5-pro"
 
     openrouter_api_key: str | None = None

@@ -1,14 +1,24 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import capture, clarify, review, sop, workflows
+from app.api import (
+    auth,
+    capture,
+    clarify,
+    collaborators,
+    library,
+    notifications,
+    review,
+    sop,
+    workflows,
+)
 from app.config import get_settings
 from app.skills.workflow_clarification import active_clarification_model
 
 
 settings = get_settings()
 
-app = FastAPI(title="Agentic Ops MVP", version="0.1.0")
+app = FastAPI(title="Agentic Ops MVP", version="0.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -18,6 +28,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
+app.include_router(library.router)
+app.include_router(notifications.router)
+app.include_router(collaborators.router)
 app.include_router(capture.router)
 app.include_router(workflows.router)
 app.include_router(clarify.router)
@@ -31,4 +45,3 @@ async def health() -> dict:
         "status": "ok",
         "clarification": active_clarification_model(),
     }
-

@@ -70,7 +70,7 @@ export default function Processing({ workflowId, needsTranscription, onReady }: 
 
   return (
     <main className="processing">
-      <Topbar />
+      <Topbar user={null} onOpenWorkflow={() => undefined} />
       <div className="proc-stage">
         <div>
           <div className="proc-window">

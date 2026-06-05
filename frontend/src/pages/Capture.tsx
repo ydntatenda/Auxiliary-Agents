@@ -2,9 +2,11 @@ import { ArrowRight, ChevronDown, ChevronRight } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import {
+  DeltaScope,
   Source,
   createWorkflow,
   deleteSource,
+  deltaExtract,
   extractWorkflow,
   listSources,
   retrySource,
@@ -15,6 +17,7 @@ import SourceCard from "../components/SourceCard";
 
 type Props = {
   onCaptured: (workflowId: string, needsTranscription: boolean) => void;
+  updateContext?: { workflowId: string; scope: DeltaScope | null } | null;
 };
 
 type ContributorRole = "operator" | "approver" | "observer";
@@ -56,8 +59,9 @@ function buildAssembled(sources: Source[]): string {
     .join("\n\n");
 }
 
-export default function Capture({ onCaptured }: Props) {
-  const [stage, setStage] = useState<Stage>("identity");
+export default function Capture({ onCaptured, updateContext }: Props) {
+  const inUpdateMode = !!updateContext;
+  const [stage, setStage] = useState<Stage>(inUpdateMode ? "assembly" : "identity");
 
   // Identity sub-stage state.
   const [name, setName] = useState("");
@@ -67,7 +71,9 @@ export default function Capture({ onCaptured }: Props) {
   const [starting, setStarting] = useState(false);
 
   // Assembly sub-stage state.
-  const [workflowId, setWorkflowId] = useState<string | null>(null);
+  const [workflowId, setWorkflowId] = useState<string | null>(
+    updateContext?.workflowId ?? null,
+  );
   const [sources, setSources] = useState<Source[]>([]);
   const [assemblyError, setAssemblyError] = useState<string | null>(null);
   const [extracting, setExtracting] = useState(false);
@@ -190,7 +196,19 @@ export default function Capture({ onCaptured }: Props) {
     setExtracting(true);
     setAssemblyError(null);
     try {
-      await extractWorkflow(workflowId);
+      if (updateContext?.scope) {
+        await deltaExtract(workflowId, updateContext.scope);
+      } else if (updateContext) {
+        // Adding sources to an existing workflow without a scope: treat as
+        // a "full" delta against the assembled additions.
+        await deltaExtract(workflowId, {
+          scope: "full",
+          step_ids: null,
+          change_description: null,
+        });
+      } else {
+        await extractWorkflow(workflowId);
+      }
       onCaptured(workflowId, false);
     } catch (err) {
       setAssemblyError(err instanceof Error ? err.message : "Extract failed.");
@@ -295,14 +313,18 @@ export default function Capture({ onCaptured }: Props) {
     <div className="workarea">
       <div className="canvas">
         <div className="step-eyebrow">
-          <span className="num">02 / 03</span>
-          <span>Source assembly</span>
+          <span className="num">{inUpdateMode ? "Update" : "02 / 03"}</span>
+          <span>{inUpdateMode ? "Add new sources" : "Source assembly"}</span>
         </div>
-        <h1 className="page-title">Add whatever you have, in any form.</h1>
+        <h1 className="page-title">
+          {inUpdateMode
+            ? "What's new since the last version?"
+            : "Add whatever you have, in any form."}
+        </h1>
         <p className="page-sub">
-          Sources can be text you type, a voice walkthrough, a screen recording,
-          a document, or a short guided Q&amp;A. Add as many as you need. They
-          assemble in order into one transcript that Modus reads next.
+          {inUpdateMode
+            ? "Add sources covering only what changed. We will run a scoped delta against the current graph when you hit extract."
+            : "Sources can be text you type, a voice walkthrough, a screen recording, a document, or a short guided Q&A. Add as many as you need. They assemble in order into one transcript that Modus reads next."}
         </p>
 
         <div className="source-list">

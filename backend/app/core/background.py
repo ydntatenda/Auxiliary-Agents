@@ -14,7 +14,10 @@ import logging
 from uuid import UUID
 
 from app.core.assembly import assemble_transcript
+from app.db.session import async_session
 from app.db.sources import get_source_raw_path, update_source_status
+from app.models.db import WorkflowRow
+from app.skills.embedding import embed_text
 from app.skills.source_ingestion import IngestResult, ingest_source
 
 
@@ -78,6 +81,35 @@ async def ingest_source_task(
         status="failed",
         error=str(last_error) if last_error else "unknown ingestion error",
     )
+
+
+async def embed_workflow_task(workflow_id: UUID) -> None:
+    """Compute and persist the embedding for a workflow's name + description.
+
+    Fired off after extraction populates the description. Stays quiet if
+    the workflow has no description yet, so the caller can schedule
+    eagerly without worrying about ordering.
+    """
+    async with async_session() as session:
+        row = await session.get(WorkflowRow, workflow_id)
+        if row is None:
+            return
+        body = " ".join(part for part in (row.name, row.description) if part)
+    if not body.strip():
+        return
+    try:
+        vector = await embed_text(body)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("embedding failed for workflow %s: %s", workflow_id, exc)
+        return
+    if not vector:
+        return
+    async with async_session() as session:
+        row = await session.get(WorkflowRow, workflow_id)
+        if row is None:
+            return
+        row.embedding = vector
+        await session.commit()
 
 
 async def retry_source_ingestion(workflow_id: UUID, source_id: UUID) -> None:
