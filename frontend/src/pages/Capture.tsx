@@ -1,165 +1,386 @@
-import { ArrowRight, FileText, Mic, MonitorUp } from "lucide-react";
-import { FormEvent, useState } from "react";
-import type { ReactNode } from "react";
-import { captureScreen, captureText, captureVoice } from "../api/client";
-import ScreenRecorder from "../components/ScreenRecorder";
-import TextCapture from "../components/TextCapture";
-import VoiceRecorder from "../components/VoiceRecorder";
+import { ArrowRight, ChevronDown, ChevronRight } from "lucide-react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
-type Mode = "text" | "voice" | "screen";
+import {
+  Source,
+  createWorkflow,
+  deleteSource,
+  extractWorkflow,
+  listSources,
+  retrySource,
+  updateSource,
+} from "../api/client";
+import AddSourcePanel from "../components/AddSourcePanel";
+import SourceCard from "../components/SourceCard";
 
 type Props = {
-  onCaptured: (workflowId: string, needsProcessing: boolean) => void;
+  onCaptured: (workflowId: string, needsTranscription: boolean) => void;
 };
 
-const modalities: Array<{
-  id: Mode;
-  icon: ReactNode;
-  title: string;
-  desc: string;
-  tag: string;
-}> = [
-  {
-    id: "text",
-    icon: <FileText size={22} />,
-    title: "Typed description",
-    desc: "Describe the workflow in your own words.",
-    tag: "TEXT",
-  },
-  {
-    id: "voice",
-    icon: <Mic size={22} />,
-    title: "Voice walkthrough",
-    desc: "Record yourself talking through the process.",
-    tag: "AUDIO",
-  },
-  {
-    id: "screen",
-    icon: <MonitorUp size={22} />,
-    title: "Screen recording",
-    desc: "Record yourself doing the work end-to-end.",
-    tag: "VIDEO",
-  },
-];
+type ContributorRole = "operator" | "approver" | "observer";
+
+const ROLE_OPTIONS: ReadonlyArray<{ value: ContributorRole; label: string }> = [
+  { value: "operator", label: "I do this task" },
+  { value: "approver", label: "I approve this task" },
+  { value: "observer", label: "I observe this task" },
+] as const;
+
+type Stage = "identity" | "assembly";
+
+const POLL_MS = 2000;
+
+function isSettling(sources: Source[]): boolean {
+  return sources.some(
+    (source) => source.status === "pending" || source.status === "processing",
+  );
+}
+
+function hasReady(sources: Source[]): boolean {
+  return sources.some((source) => source.status === "ready");
+}
+
+function modalityLabel(modality: string): string {
+  return modality.charAt(0).toUpperCase() + modality.slice(1);
+}
+
+function buildAssembled(sources: Source[]): string {
+  return sources
+    .filter((source) => source.status === "ready" && source.assembled_text)
+    .map((source) => {
+      const label = source.label?.trim() || "(no label)";
+      const role = source.contributor_role;
+      const descriptor = role ? `${source.modality}, ${role}` : source.modality;
+      const header = `=== Source: ${label} (${descriptor}) ===`;
+      return `${header}\n${source.assembled_text!.trim()}`;
+    })
+    .join("\n\n");
+}
 
 export default function Capture({ onCaptured }: Props) {
-  const [mode, setMode] = useState<Mode>("text");
-  const [name, setName] = useState("Citation appeals processing");
-  const [unit, setUnit] = useState("");
-  const [text, setText] = useState("");
-  const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
-  const [screenBlob, setScreenBlob] = useState<Blob | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [stage, setStage] = useState<Stage>("identity");
 
-  async function submit(event: FormEvent) {
+  // Identity sub-stage state.
+  const [name, setName] = useState("");
+  const [unit, setUnit] = useState("");
+  const [role, setRole] = useState<ContributorRole | "">("");
+  const [startingError, setStartingError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+
+  // Assembly sub-stage state.
+  const [workflowId, setWorkflowId] = useState<string | null>(null);
+  const [sources, setSources] = useState<Source[]>([]);
+  const [assemblyError, setAssemblyError] = useState<string | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
+
+  async function startWorkflow(event: FormEvent) {
     event.preventDefault();
-    setSubmitting(true);
-    setError(null);
+    if (!name.trim() || !unit.trim() || !role) {
+      setStartingError("Name, unit, and role are required.");
+      return;
+    }
+    setStarting(true);
+    setStartingError(null);
     try {
-      const response =
-        mode === "text"
-          ? await captureText(name, unit, text)
-          : mode === "voice"
-            ? await captureVoice(name, unit, voiceBlob!)
-            : await captureScreen(name, unit, screenBlob!);
-      onCaptured(response.workflow_id, mode !== "text");
+      const created = await createWorkflow(name.trim(), unit.trim(), role);
+      setWorkflowId(created.workflow_id);
+      setStage("assembly");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Capture failed");
+      setStartingError(err instanceof Error ? err.message : "Could not start workflow.");
     } finally {
-      setSubmitting(false);
+      setStarting(false);
     }
   }
 
-  const canSubmit =
-    Boolean(name.trim()) &&
-    Boolean(unit.trim()) &&
-    (mode === "text" ? Boolean(text.trim()) : mode === "voice" ? Boolean(voiceBlob) : Boolean(screenBlob));
+  // Poll sources while anything is still settling.
+  useEffect(() => {
+    if (!workflowId) return;
+    if (!isSettling(sources)) return;
+    const handle = window.setInterval(async () => {
+      try {
+        const next = await listSources(workflowId);
+        setSources(next);
+      } catch {
+        // Swallow polling errors; the next tick will retry. A persistent
+        // failure is visible because the failed source's pill stays put.
+      }
+    }, POLL_MS);
+    return () => window.clearInterval(handle);
+  }, [workflowId, sources]);
+
+  const sortedSources = useMemo(
+    () => [...sources].sort((a, b) => a.order - b.order),
+    [sources],
+  );
+  const settling = isSettling(sortedSources);
+  const ready = hasReady(sortedSources);
+  const canExtract = ready && !settling && !extracting;
+  const assembledPreview = useMemo(() => buildAssembled(sortedSources), [sortedSources]);
+
+  const handleSourceAdded = useCallback(async (source: Source) => {
+    setSources((current) => {
+      const without = current.filter((row) => row.id !== source.id);
+      return [...without, source];
+    });
+    // The just-added file source is pending; refresh in 2 seconds via the
+    // polling effect. For text and chat sources, the server has already
+    // updated the assembled_text cache on the workflow row, so a quick
+    // refetch keeps the preview in sync.
+    if (workflowId && source.status === "ready") {
+      try {
+        const fresh = await listSources(workflowId);
+        setSources(fresh);
+      } catch {
+        // Non-fatal; the next interaction reloads.
+      }
+    }
+  }, [workflowId]);
+
+  async function handleRemove(sourceId: string) {
+    if (!workflowId) return;
+    const previous = sources;
+    setSources((current) => current.filter((row) => row.id !== sourceId));
+    try {
+      await deleteSource(workflowId, sourceId);
+      const fresh = await listSources(workflowId);
+      setSources(fresh);
+    } catch (err) {
+      setSources(previous);
+      setAssemblyError(err instanceof Error ? err.message : "Could not remove source.");
+    }
+  }
+
+  async function handleRetry(sourceId: string) {
+    if (!workflowId) return;
+    try {
+      const fresh = await retrySource(workflowId, sourceId);
+      setSources((current) =>
+        current.map((row) => (row.id === sourceId ? fresh : row)),
+      );
+    } catch (err) {
+      setAssemblyError(err instanceof Error ? err.message : "Retry failed.");
+    }
+  }
+
+  async function handleLabelChange(sourceId: string, label: string) {
+    if (!workflowId) return;
+    try {
+      const fresh = await updateSource(workflowId, sourceId, { label });
+      setSources((current) =>
+        current.map((row) => (row.id === sourceId ? fresh : row)),
+      );
+    } catch (err) {
+      setAssemblyError(err instanceof Error ? err.message : "Could not rename.");
+    }
+  }
+
+  async function handleMove(sourceId: string, direction: "up" | "down") {
+    if (!workflowId) return;
+    try {
+      await updateSource(workflowId, sourceId, { move: direction });
+      const fresh = await listSources(workflowId);
+      setSources(fresh);
+    } catch (err) {
+      setAssemblyError(err instanceof Error ? err.message : "Could not reorder.");
+    }
+  }
+
+  async function handleExtract() {
+    if (!workflowId || !canExtract) return;
+    setExtracting(true);
+    setAssemblyError(null);
+    try {
+      await extractWorkflow(workflowId);
+      onCaptured(workflowId, false);
+    } catch (err) {
+      setAssemblyError(err instanceof Error ? err.message : "Extract failed.");
+      setExtracting(false);
+    }
+  }
+
+  if (stage === "identity") {
+    return (
+      <div className="workarea">
+        <div className="canvas">
+          <div className="step-eyebrow">
+            <span className="num">01 / 03</span>
+            <span>Workflow identity</span>
+          </div>
+          <h1 className="page-title">Name the workflow you are capturing.</h1>
+          <p className="page-sub">
+            Modus turns a recurring task into a structured workflow graph.
+            Tell us what this is, who runs it, and your relationship to it.
+            You will add sources of any kind in the next step.
+          </p>
+
+          <form onSubmit={startWorkflow}>
+            <div className="field-row">
+              <label className="field-label" htmlFor="workflow-name">
+                Workflow name
+                <span className="req">*</span>
+                <span className="hint">Short and specific. "Citation appeals", not "Appeals".</span>
+              </label>
+              <input
+                id="workflow-name"
+                className="text-input"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="What is this workflow called?"
+                disabled={starting}
+                autoFocus
+              />
+            </div>
+
+            <div className="field-row">
+              <label className="field-label" htmlFor="workflow-unit">
+                Department or unit
+                <span className="req">*</span>
+                <span className="hint">The team that owns this work.</span>
+              </label>
+              <input
+                id="workflow-unit"
+                className="text-input"
+                value={unit}
+                onChange={(event) => setUnit(event.target.value)}
+                placeholder="e.g. Parking & Transportation"
+                disabled={starting}
+              />
+            </div>
+
+            <div className="field-row">
+              <label className="field-label">
+                Your role
+                <span className="req">*</span>
+                <span className="hint">How you relate to this task. Sources you add are tagged with this.</span>
+              </label>
+              <div className="role-options">
+                {ROLE_OPTIONS.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={`role-option${role === value ? " selected" : ""}`}
+                    onClick={() => setRole(value)}
+                    disabled={starting}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {startingError && <div className="error">{startingError}</div>}
+
+            <div className="actions">
+              <span className="label-mono">Step 1 of 3</span>
+              <div className="right">
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={starting || !name.trim() || !unit.trim() || !role}
+                >
+                  {starting ? "Starting..." : "Start"}
+                  <ArrowRight size={13} />
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  if (!workflowId) return null;
 
   return (
     <div className="workarea">
-      <form className="canvas" onSubmit={submit}>
+      <div className="canvas">
         <div className="step-eyebrow">
-          <span className="num">01 / 04</span>
-          <span>Capture</span>
+          <span className="num">02 / 03</span>
+          <span>Source assembly</span>
         </div>
-        <h1 className="page-title">Tell Modus how this workflow gets done.</h1>
+        <h1 className="page-title">Add whatever you have, in any form.</h1>
         <p className="page-sub">
-          Text, voice, and screen recordings all become a transcript first. The system extracts the
-          workflow graph, then asks focused questions to close important gaps.
+          Sources can be text you type, a voice walkthrough, a screen recording,
+          a document, or a short guided Q&amp;A. Add as many as you need. They
+          assemble in order into one transcript that Modus reads next.
         </p>
 
-        <div className="field-row">
-          <div className="field-label">
-            Workflow name<span className="req">*</span>
-            <span className="hint">Short and descriptive. This appears in the SOP header.</span>
-          </div>
-          <div>
-            <input className="text-input" onChange={(event) => setName(event.target.value)} value={name} />
-          </div>
-        </div>
-
-        <div className="field-row">
-          <div className="field-label">
-            Department<span className="req">*</span>
-            <span className="hint">The unit that owns this procedure.</span>
-          </div>
-          <div>
-            <input className="text-input" onChange={(event) => setUnit(event.target.value)} value={unit} />
-          </div>
-        </div>
-
-        <div className="field-row">
-          <div className="field-label">
-            Input modality<span className="req">*</span>
-            <span className="hint">Pick the clearest way to describe the work.</span>
-          </div>
-          <div>
-            <div className="modality-grid">
-              {modalities.map((item) => (
-                <button
-                  className={`modality${mode === item.id ? " selected" : ""}`}
-                  key={item.id}
-                  onClick={() => setMode(item.id)}
-                  type="button"
-                >
-                  <span className="m-tag">{item.tag}</span>
-                  <span className="icon">{item.icon}</span>
-                  <span className="m-title">{item.title}</span>
-                  <span className="m-desc">{item.desc}</span>
-                </button>
-              ))}
+        <div className="source-list">
+          {sortedSources.length === 0 && (
+            <div className="source-empty">
+              No sources yet. Add one below to begin.
             </div>
-
-            <div className="input-pane">
-              <div className="input-pane-head">
-                <span className="label-mono">
-                  {mode === "text" ? "Typed description" : mode === "voice" ? "Voice walkthrough" : "Screen recording"}
-                </span>
-                <span className="label-mono">MVP capture</span>
-              </div>
-              {mode === "text" && <TextCapture text={text} onChange={setText} />}
-              {mode === "voice" && <VoiceRecorder onRecordingReady={setVoiceBlob} />}
-              {mode === "screen" && <ScreenRecorder onRecordingReady={setScreenBlob} />}
-            </div>
-          </div>
+          )}
+          {sortedSources.map((source, index) => (
+            <SourceCard
+              key={source.id}
+              source={source}
+              isFirst={index === 0}
+              isLast={index === sortedSources.length - 1}
+              onRemove={() => void handleRemove(source.id)}
+              onRetry={() => void handleRetry(source.id)}
+              onLabelChange={(label) => void handleLabelChange(source.id, label)}
+              onMove={(direction) => void handleMove(source.id, direction)}
+            />
+          ))}
         </div>
 
-        {error && <div className="error">{error}</div>}
+        <AddSourcePanel
+          workflowId={workflowId}
+          contributorRole={role || null}
+          onSourceAdded={handleSourceAdded}
+        />
 
-        <div className="actions">
-          <button className="btn btn-ghost" type="button">
-            Draft only
-          </button>
-          <div className="right">
-            <span className="label-mono">Graph-first SOP pipeline</span>
-            <button className="btn btn-primary" disabled={!canSubmit || submitting} type="submit">
-              {submitting ? "Submitting" : "Run extraction"}
-              <ArrowRight size={14} />
+        {ready && (
+          <section className="transcript-panel">
+            <button
+              type="button"
+              className="transcript-head"
+              onClick={() => setTranscriptOpen((open) => !open)}
+            >
+              {transcriptOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              <span className="label-mono">
+                Assembled transcript, {sortedSources.filter((s) => s.status === "ready").length}{" "}
+                {sortedSources.filter((s) => s.status === "ready").length === 1 ? "source" : "sources"}
+              </span>
             </button>
-          </div>
+            {transcriptOpen && (
+              <pre className="transcript-body">{assembledPreview}</pre>
+            )}
+          </section>
+        )}
+
+        {assemblyError && <div className="error">{assemblyError}</div>}
+
+        <div className="extract-row">
+          <button
+            type="button"
+            className="btn btn-primary btn-block"
+            onClick={() => void handleExtract()}
+            disabled={!canExtract}
+            title={
+              settling
+                ? "Wait for sources to finish processing."
+                : !ready
+                  ? "Add at least one source first."
+                  : undefined
+            }
+          >
+            {extracting
+              ? "Extracting..."
+              : settling
+                ? "Waiting for sources to finish..."
+                : `Extract from ${sortedSources.filter((s) => s.status === "ready").length} ${
+                    sortedSources.filter((s) => s.status === "ready").length === 1 ? "source" : "sources"
+                  }`}
+            <ArrowRight size={13} />
+          </button>
+          <span className="label-mono extract-caption">
+            Modality:{" "}
+            {[...new Set(sortedSources.map((s) => modalityLabel(s.modality)))].join(", ") || "none yet"}
+          </span>
         </div>
-      </form>
+      </div>
     </div>
   );
 }

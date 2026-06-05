@@ -17,7 +17,16 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+)
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,6 +53,10 @@ router = APIRouter(tags=["capture"])
 
 Modality = Literal["text", "voice", "screen", "document", "chat", "connector"]
 ContributorRole = Literal["operator", "approver", "observer"]
+ReorderDirection = Literal["up", "down"]
+
+_FILE_MODALITIES = {"voice", "screen", "document"}
+_DEFAULT_EXT = {"voice": ".webm", "screen": ".webm", "document": ".pdf"}
 
 
 class CreateWorkflowPayload(BaseModel):
@@ -58,7 +71,14 @@ class CreateWorkflowResponse(BaseModel):
 
 
 class SourceResponse(BaseModel):
-    source_id: str
+    """Wire shape consumed by the capture UI.
+
+    The frontend derives the assembled transcript preview client-side, so the
+    full assembled_text travels with each row. `id` matches the spec's Source
+    type; the legacy field name source_id is gone.
+    """
+
+    id: str
     workflow_id: str
     order: int
     modality: str
@@ -67,7 +87,7 @@ class SourceResponse(BaseModel):
     status: str
     error: str | None
     meta: dict | None
-    has_assembled_text: bool
+    assembled_text: str | None
 
 
 class AssembleResponse(BaseModel):
@@ -83,9 +103,21 @@ class CaptureResponse(BaseModel):
     status: str
 
 
+class UpdateSourcePayload(BaseModel):
+    """PATCH body. Either field may be present; both are optional.
+
+    `label` rewrites the source's display label. `move` swaps the source's
+    order with its neighbour in the requested direction, which is enough for
+    the up/down arrow UX the spec calls for.
+    """
+
+    label: str | None = None
+    move: ReorderDirection | None = None
+
+
 def _to_source_response(row: SourceRow) -> SourceResponse:
     return SourceResponse(
-        source_id=str(row.id),
+        id=str(row.id),
         workflow_id=str(row.workflow_id),
         order=row.order,
         modality=row.modality,
@@ -94,7 +126,7 @@ def _to_source_response(row: SourceRow) -> SourceResponse:
         status=row.status,
         error=row.error,
         meta=row.meta,
-        has_assembled_text=bool(row.assembled_text),
+        assembled_text=row.assembled_text,
     )
 
 
@@ -117,6 +149,12 @@ async def create_workflow(
     payload: CreateWorkflowPayload,
     db: AsyncSession = Depends(get_db),
 ) -> CreateWorkflowResponse:
+    """Create the workflow shell.
+
+    contributor_role is accepted for API symmetry with the source endpoint,
+    but it is the source row that records the role; the frontend re-sends it
+    on each subsequent add_source call. No workflow-level column.
+    """
     row = await create_workflow_row(
         session=db,
         name=payload.name,
@@ -146,70 +184,78 @@ async def get_sources(
 )
 async def add_source(
     workflow_id: str,
+    request: Request,
     background_tasks: BackgroundTasks,
-    modality: Modality = Form(...),
-    label: str | None = Form(None),
-    contributor_role: ContributorRole | None = Form(None),
-    text: str | None = Form(None),
-    chat_messages: str | None = Form(None),
-    file: UploadFile | None = File(None),
     db: AsyncSession = Depends(get_db),
 ) -> SourceResponse:
     """Add one source to a workflow.
 
-    The payload shape depends on modality:
-    - text: send `text` (form field).
-    - voice / screen / document: send `file` (multipart upload).
-    - chat: send `chat_messages` as a JSON-encoded list of {role, content}.
-    - connector: not yet implemented; returns 501.
-
-    Text and chat sources land 'ready' synchronously and immediately update
-    the workflow's assembled_transcript. Voice, screen, and document sources
-    spawn a background ingestion task and return 'processing' / 'pending'.
+    Dispatches on Content-Type:
+    - application/json for text and chat sources (no file payload), with
+      fields {modality, raw_text?, chat_messages?, label?, contributor_role?}.
+    - multipart/form-data for voice, screen, and document uploads.
     """
     try:
         workflow_row = await require_workflow_row(db, workflow_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    workflow_uuid = workflow_row.id
+    content_type = (request.headers.get("content-type") or "").lower()
+
+    if content_type.startswith("application/json"):
+        return await _add_source_json(
+            request=request,
+            workflow_uuid=workflow_uuid,
+            db=db,
+        )
+    if content_type.startswith("multipart/form-data"):
+        return await _add_source_multipart(
+            request=request,
+            workflow_uuid=workflow_uuid,
+            db=db,
+            background_tasks=background_tasks,
+        )
+    raise HTTPException(
+        status_code=415,
+        detail="Content-Type must be application/json or multipart/form-data",
+    )
+
+
+async def _add_source_json(
+    *,
+    request: Request,
+    workflow_uuid: UUID,
+    db: AsyncSession,
+) -> SourceResponse:
+    try:
+        body = await request.json()
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"invalid JSON: {exc.msg}") from exc
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=422, detail="JSON body must be an object")
+
+    modality = body.get("modality")
+    label = body.get("label")
+    contributor_role = body.get("contributor_role")
+
     if modality == "connector":
         raise HTTPException(
             status_code=501,
             detail="Connector ingestion is the future seam. No implementation yet.",
         )
-
-    workflow_uuid = workflow_row.id
-
     if modality == "text":
-        if not text:
-            raise HTTPException(status_code=422, detail="text modality requires the text field")
-        result = await ingest_source("text", raw_text=text)
-        source = await create_source_row(
-            session=db,
-            workflow_id=workflow_uuid,
-            modality=modality,
-            label=label,
-            raw_path=None,
-            contributor_role=contributor_role,
-            assembled_text=result.assembled_text,
-            status="ready",
-            meta=result.meta,
-        )
-        await assemble_transcript(workflow_uuid)
-        return _to_source_response(source)
-
-    if modality == "chat":
-        if not chat_messages:
+        raw_text = body.get("raw_text")
+        if not isinstance(raw_text, str) or not raw_text.strip():
             raise HTTPException(
                 status_code=422,
-                detail="chat modality requires chat_messages as a JSON-encoded list",
+                detail="text modality requires a non-empty raw_text field",
             )
-        parsed = _parse_chat_messages(chat_messages)
-        result = await ingest_source("chat", chat_messages=parsed)
+        result = await ingest_source("text", raw_text=raw_text)
         source = await create_source_row(
             session=db,
             workflow_id=workflow_uuid,
-            modality=modality,
+            modality="text",
             label=label,
             raw_path=None,
             contributor_role=contributor_role,
@@ -219,24 +265,130 @@ async def add_source(
         )
         await assemble_transcript(workflow_uuid)
         return _to_source_response(source)
+    if modality == "chat":
+        chat_messages = body.get("chat_messages")
+        if not isinstance(chat_messages, list):
+            raise HTTPException(
+                status_code=422,
+                detail="chat modality requires chat_messages as a list",
+            )
+        normalised = _normalise_chat_messages(chat_messages)
+        result = await ingest_source("chat", chat_messages=normalised)
+        source = await create_source_row(
+            session=db,
+            workflow_id=workflow_uuid,
+            modality="chat",
+            label=label,
+            raw_path=None,
+            contributor_role=contributor_role,
+            assembled_text=result.assembled_text,
+            status="ready",
+            meta=result.meta,
+        )
+        await assemble_transcript(workflow_uuid)
+        return _to_source_response(source)
+    if modality in _FILE_MODALITIES:
+        raise HTTPException(
+            status_code=415,
+            detail=f"{modality} modality requires multipart/form-data with a file upload",
+        )
+    raise HTTPException(status_code=422, detail=f"unsupported modality {modality!r}")
 
-    if modality in {"voice", "screen", "document"}:
-        if file is None:
+
+async def _add_source_multipart(
+    *,
+    request: Request,
+    workflow_uuid: UUID,
+    db: AsyncSession,
+    background_tasks: BackgroundTasks,
+) -> SourceResponse:
+    form = await request.form()
+    modality = form.get("modality")
+    label = form.get("label") or None
+    contributor_role = form.get("contributor_role") or None
+    upload = form.get("file")
+
+    if modality == "connector":
+        raise HTTPException(
+            status_code=501,
+            detail="Connector ingestion is the future seam. No implementation yet.",
+        )
+    if modality == "text":
+        raw_text = form.get("raw_text") or form.get("text")
+        if not raw_text:
+            raise HTTPException(
+                status_code=422,
+                detail="text modality requires raw_text",
+            )
+        result = await ingest_source("text", raw_text=str(raw_text))
+        source = await create_source_row(
+            session=db,
+            workflow_id=workflow_uuid,
+            modality="text",
+            label=label,
+            raw_path=None,
+            contributor_role=contributor_role,
+            assembled_text=result.assembled_text,
+            status="ready",
+            meta=result.meta,
+        )
+        await assemble_transcript(workflow_uuid)
+        return _to_source_response(source)
+    if modality == "chat":
+        chat_messages_raw = form.get("chat_messages")
+        if not chat_messages_raw:
+            raise HTTPException(
+                status_code=422,
+                detail="chat modality requires chat_messages as JSON",
+            )
+        try:
+            chat_messages = json.loads(str(chat_messages_raw))
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"chat_messages must be valid JSON: {exc.msg}",
+            ) from exc
+        if not isinstance(chat_messages, list):
+            raise HTTPException(
+                status_code=422,
+                detail="chat_messages must be a JSON array",
+            )
+        normalised = _normalise_chat_messages(chat_messages)
+        result = await ingest_source("chat", chat_messages=normalised)
+        source = await create_source_row(
+            session=db,
+            workflow_id=workflow_uuid,
+            modality="chat",
+            label=label,
+            raw_path=None,
+            contributor_role=contributor_role,
+            assembled_text=result.assembled_text,
+            status="ready",
+            meta=result.meta,
+        )
+        await assemble_transcript(workflow_uuid)
+        return _to_source_response(source)
+    if modality in _FILE_MODALITIES:
+        if not isinstance(upload, UploadFile):
             raise HTTPException(
                 status_code=422,
                 detail=f"{modality} modality requires a file upload",
             )
-        default_ext = {"voice": ".webm", "screen": ".webm", "document": ".pdf"}[modality]
         source = await create_source_row(
             session=db,
             workflow_id=workflow_uuid,
-            modality=modality,
+            modality=str(modality),
             label=label,
             raw_path=None,
             contributor_role=contributor_role,
             status="pending",
         )
-        raw_path = await _save_upload(str(workflow_uuid), str(source.id), file, default_ext)
+        raw_path = await _save_upload(
+            str(workflow_uuid),
+            str(source.id),
+            upload,
+            _DEFAULT_EXT[str(modality)],
+        )
         source.raw_path = raw_path
         await db.commit()
         await db.refresh(source)
@@ -244,12 +396,72 @@ async def add_source(
             ingest_source_task,
             workflow_uuid,
             source.id,
-            modality,
+            str(modality),
             raw_path=raw_path,
         )
         return _to_source_response(source)
-
     raise HTTPException(status_code=422, detail=f"unsupported modality {modality!r}")
+
+
+@router.patch(
+    "/workflows/{workflow_id}/sources/{source_id}",
+    response_model=SourceResponse,
+)
+async def update_source(
+    workflow_id: str,
+    source_id: str,
+    payload: UpdateSourcePayload,
+    db: AsyncSession = Depends(get_db),
+) -> SourceResponse:
+    """Edit a source's label or move it up/down in the assembly order.
+
+    Reordering is expressed as a swap with the immediate neighbour, which is
+    what the up/down arrow UI needs. Anything fancier (drag-and-drop, jump
+    to position) is a future change to this same endpoint.
+    """
+    try:
+        await require_workflow_row(db, workflow_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    try:
+        source = await require_source(db, UUID(workflow_id), UUID(source_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    touched = False
+
+    if payload.label is not None:
+        source.label = payload.label.strip() or None
+        touched = True
+
+    if payload.move is not None:
+        neighbour = await _find_swap_neighbour(db, UUID(workflow_id), source, payload.move)
+        if neighbour is not None:
+            source.order, neighbour.order = neighbour.order, source.order
+            touched = True
+
+    if touched:
+        await db.commit()
+        await db.refresh(source)
+        await assemble_transcript(UUID(workflow_id))
+
+    return _to_source_response(source)
+
+
+async def _find_swap_neighbour(
+    db: AsyncSession,
+    workflow_id: UUID,
+    source: SourceRow,
+    direction: ReorderDirection,
+) -> SourceRow | None:
+    rows = await list_sources(db, workflow_id)
+    idx = next((i for i, row in enumerate(rows) if row.id == source.id), None)
+    if idx is None:
+        return None
+    target_idx = idx - 1 if direction == "up" else idx + 1
+    if target_idx < 0 or target_idx >= len(rows):
+        return None
+    return rows[target_idx]
 
 
 @router.delete(
@@ -447,17 +659,24 @@ async def _legacy_media_capture(
     return CaptureResponse(workflow_id=str(workflow_row.id), status=workflow_row.status)
 
 
-def _parse_chat_messages(raw: str) -> list[dict[str, Any]]:
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail=f"chat_messages must be valid JSON: {exc.msg}",
-        ) from exc
-    if not isinstance(parsed, list):
-        raise HTTPException(
-            status_code=422,
-            detail="chat_messages must be a JSON array of {role, content} objects",
-        )
-    return parsed
+def _normalise_chat_messages(messages: list[Any]) -> list[dict[str, Any]]:
+    """Accept both spec-style {question, answer} pairs and {role, content} turns.
+
+    The spec's frontend sends a list of {question, answer} objects. The
+    chat_source skill expects {role, content}. Translate here so both wire
+    shapes work.
+    """
+    normalised: list[dict[str, Any]] = []
+    for entry in messages:
+        if not isinstance(entry, dict):
+            continue
+        if "question" in entry or "answer" in entry:
+            question = entry.get("question")
+            answer = entry.get("answer")
+            if question:
+                normalised.append({"role": "question", "content": str(question)})
+            if answer:
+                normalised.append({"role": "answer", "content": str(answer)})
+        else:
+            normalised.append(entry)
+    return normalised
