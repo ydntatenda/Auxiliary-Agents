@@ -12,7 +12,7 @@ from app.skills.workflow_clarification import ClarificationMessage, Clarificatio
 
 def test_skill_packages_export_public_contracts_only() -> None:
     assert workflow_extraction.__all__ == ["extract_workflow"]
-    assert sop_rendering.__all__ == ["render_sop"]
+    assert set(sop_rendering.__all__) == {"render_sop", "sop_graph_hash"}
     assert voice_transcription.__all__ == ["transcribe_audio"]
     assert screen_analysis.__all__ == ["analyze_screen_recording"]
     # source_ingestion exposes one public async function plus the typed result.

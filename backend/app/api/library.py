@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth_stub import get_current_user
+from app.core.sop_cache import SopRenderError, render_or_load_sop
 from app.db.collaborators import (
     get_collaborator_role,
     list_collaborators,
@@ -118,23 +119,25 @@ async def approve_workflow(
     workflow_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> WorkflowSummary:
-    """Mark a workflow approved, snapshot its current graph and SOP.
+    """Mark a workflow approved, snapshot its current graph AND its SOP.
 
-    Increments the version number, snapshots the graph (and the last
-    rendered SOP if any) into workflow_versions, sets approved_at /
-    approved_by, and fans a notification of type 'approved' out to every
-    collaborator on the workflow.
+    Renders the SOP from the current graph (via the cache coordinator, so
+    we don't pay OpenAI twice if the graph hasn't moved since the last
+    render) and snapshots both the graph and the rendered markdown into
+    workflow_versions. Increments the version number, sets approved_at /
+    approved_by, refreshes the cached SOP on the row, and fans a
+    notification of type 'approved' out to every collaborator.
     """
     user = get_current_user()
     try:
         row = await require_workflow_row(db, workflow_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    if row.graph is None:
-        raise HTTPException(
-            status_code=409,
-            detail="Workflow has no graph to approve.",
-        )
+
+    try:
+        sop_markdown, _cache_hit = await render_or_load_sop(row)
+    except SopRenderError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     row.status = "approved"
     row.approved_at = datetime.now(timezone.utc)
@@ -148,7 +151,7 @@ async def approve_workflow(
         workflow_id=row.id,
         version=row.version,
         graph_snapshot=row.graph or {},
-        sop_snapshot=None,
+        sop_snapshot=sop_markdown,
         change_summary=None,
         changed_by=user.id,
     )

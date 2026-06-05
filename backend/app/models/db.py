@@ -46,6 +46,8 @@ class WorkflowRow(Base):
     approved_by: Mapped[str | None] = mapped_column(Text)
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sop_cache: Mapped[str | None] = mapped_column(Text)
+    sop_cache_graph_hash: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
