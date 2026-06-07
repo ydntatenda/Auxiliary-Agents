@@ -1860,6 +1860,40 @@ textarea.text-input {
   margin-bottom: 16px;
 }
 
+.detail-name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.detail-name-row .sc-iconbtn {
+  margin-top: 4px;
+}
+
+.identity-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 560px;
+}
+
+.identity-editor-row {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.identity-editor-row textarea.text-input {
+  min-height: 64px;
+}
+
+.identity-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .detail-meta {
   display: flex;
   align-items: center;

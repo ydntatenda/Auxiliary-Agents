@@ -24,11 +24,15 @@ type Props = {
   source: Source;
   isFirst: boolean;
   isLast: boolean;
+  canEdit: boolean;
   onRemove: () => void;
   onRetry: () => void;
   onLabelChange: (label: string) => void;
   onMove: (direction: "up" | "down") => void;
 };
+
+const READ_ONLY_TITLE =
+  "Only the person who added this source, or the workflow owner, can change it.";
 
 const MODALITY_ICON: Record<string, typeof Type> = {
   text: Type,
@@ -68,6 +72,7 @@ export default function SourceCard({
   source,
   isFirst,
   isLast,
+  canEdit,
   onRemove,
   onRetry,
   onLabelChange,
@@ -77,6 +82,7 @@ export default function SourceCard({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(source.label ?? "");
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const readOnlyTitle = canEdit ? undefined : READ_ONLY_TITLE;
 
   useEffect(() => {
     if (editing) {
@@ -108,8 +114,9 @@ export default function SourceCard({
           type="button"
           className="sc-arrow"
           onClick={() => onMove("up")}
-          disabled={isFirst}
+          disabled={isFirst || !canEdit}
           aria-label="Move source up"
+          title={readOnlyTitle}
         >
           <ArrowUp size={12} />
         </button>
@@ -118,8 +125,9 @@ export default function SourceCard({
           type="button"
           className="sc-arrow"
           onClick={() => onMove("down")}
-          disabled={isLast}
+          disabled={isLast || !canEdit}
           aria-label="Move source down"
+          title={readOnlyTitle}
         >
           <ArrowDown size={12} />
         </button>
@@ -168,11 +176,14 @@ export default function SourceCard({
             <button
               type="button"
               className="sc-label"
-              onClick={() => setEditing(true)}
-              title="Click to rename"
+              onClick={() => {
+                if (canEdit) setEditing(true);
+              }}
+              disabled={!canEdit}
+              title={canEdit ? "Click to rename" : readOnlyTitle}
             >
               <span>{displayLabel(source)}</span>
-              <Pencil size={11} className="sc-pencil" />
+              {canEdit && <Pencil size={11} className="sc-pencil" />}
             </button>
           )}
           <span className="sc-modality">{modalityLabel(source.modality)}</span>
@@ -196,7 +207,8 @@ export default function SourceCard({
             className="sc-iconbtn"
             onClick={onRetry}
             aria-label="Retry source"
-            title="Retry ingestion"
+            title={canEdit ? "Retry ingestion" : readOnlyTitle}
+            disabled={!canEdit}
           >
             <RefreshCw size={14} />
           </button>
@@ -206,7 +218,8 @@ export default function SourceCard({
           className="sc-iconbtn danger"
           onClick={onRemove}
           aria-label="Remove source"
-          title="Remove"
+          title={canEdit ? "Remove" : readOnlyTitle}
+          disabled={!canEdit}
         >
           <Trash2 size={14} />
         </button>

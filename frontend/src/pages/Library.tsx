@@ -5,11 +5,13 @@ import {
   ChevronRight,
   Copy,
   FilePlus,
+  Pencil,
   Search,
   Trash2,
   Users,
+  X as XIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import {
   Collaborator,
@@ -21,6 +23,7 @@ import {
   approveWorkflow,
   archiveWorkflow,
   duplicateWorkflow,
+  editWorkflow,
   getWorkflowSummary,
   listWorkflows,
   requestUpdate,
@@ -35,8 +38,8 @@ type Props = {
   user: CurrentUser;
   initialWorkflowId?: string | null;
   onNewWorkflow: () => void;
-  onUpdateFlow: (workflowId: string, scope: DeltaScope) => void;
-  onAddSources: (workflowId: string) => void;
+  onUpdateFlow: (workflowId: string, scope: DeltaScope, ownerId: string | null) => void;
+  onAddSources: (workflowId: string, ownerId: string | null) => void;
 };
 
 type Sub = "home" | "search" | "detail";
@@ -170,7 +173,7 @@ export default function Library({
         selectedSteps={selectedSteps}
         scopeOpen={scopeOpen}
         onBack={back}
-        onAddSources={() => onAddSources(openId)}
+        onAddSources={() => onAddSources(openId, detail?.created_by ?? null)}
         onApprove={async () => {
           try {
             await approveWorkflow(openId);
@@ -225,12 +228,18 @@ export default function Library({
           setScopeOpen(false);
         }}
         onConfirmScope={(scope) => {
-          onUpdateFlow(openId, scope);
+          onUpdateFlow(openId, scope, detail?.created_by ?? null);
         }}
         onCollaboratorsChange={(next) => {
           setDetail((current) =>
             current ? { ...current, collaborators: next, collaborator_count: next.length } : current,
           );
+        }}
+        onDetailUpdated={(next) => {
+          setDetail(next);
+          // Also refresh the home listing so a rename shows up immediately
+          // when the user goes back.
+          void listWorkflows().then(setWorkflows).catch(() => undefined);
         }}
         error={error}
       />
@@ -510,6 +519,7 @@ function Detail({
   onClearSelection,
   onConfirmScope,
   onCollaboratorsChange,
+  onDetailUpdated,
   error,
 }: {
   workflowId: string;
@@ -528,16 +538,33 @@ function Detail({
   onClearSelection: () => void;
   onConfirmScope: (scope: DeltaScope) => void;
   onCollaboratorsChange: (next: Collaborator[]) => void;
+  onDetailUpdated: (next: WorkflowDetail) => void;
   error: string | null;
 }) {
   const role = detail?.current_user_role;
+  // The current user "manages" a workflow when they are an admin, or when
+  // they created it. Owner = creator; there is no separate owner role.
+  const canManage =
+    !!detail &&
+    (currentUser.role === "admin" || detail.created_by === currentUser.id);
   const canApprove =
     !!detail &&
     (currentUser.role === "admin" || role === "approver") &&
     ["clarifying", "reviewing", "done"].includes(detail.status);
+  // Reviewers often have first-hand knowledge of the work and should be
+  // able to contribute new sources, even though their primary role is to
+  // approve. The backend agrees: it accepts adds from anyone.
   const canContribute =
     !!detail &&
-    (currentUser.role === "admin" || role === "contributor" || role === "approver");
+    (currentUser.role === "admin" ||
+      role === "contributor" ||
+      role === "reviewer" ||
+      role === "approver");
+  // Request update: any collaborator, the owner, or admin. Backend
+  // enforces the same; we hide the button to match.
+  const canRequestUpdate =
+    !!detail && (canManage || role !== null);
+  const [editing, setEditing] = useState(false);
 
   const stepList = useMemo(() => {
     const graph = (detail as unknown as { graph?: { steps?: { id: string; title: string }[] } })?.graph;
@@ -560,19 +587,45 @@ function Detail({
           <>
             <div className="detail-head">
               <div>
-                <h1 className="page-title">{detail.name}</h1>
-                <div className="detail-meta">
-                  <span>{detail.unit}</span>
-                  <StatusPill status={detail.status} />
-                  <span className="label-mono">v{detail.version}</span>
-                  {detail.approved_at && (
-                    <span className="label-mono">
-                      approved {timeAgo(detail.approved_at)}
-                    </span>
-                  )}
-                </div>
-                {detail.description && (
-                  <p className="page-sub">{detail.description}</p>
+                {editing ? (
+                  <IdentityEditor
+                    detail={detail}
+                    onSave={(next) => {
+                      onDetailUpdated(next);
+                      setEditing(false);
+                    }}
+                    onCancel={() => setEditing(false)}
+                  />
+                ) : (
+                  <>
+                    <div className="detail-name-row">
+                      <h1 className="page-title">{detail.name}</h1>
+                      {canManage && (
+                        <button
+                          type="button"
+                          className="sc-iconbtn"
+                          onClick={() => setEditing(true)}
+                          title="Edit name, unit, or description"
+                          aria-label="Edit workflow identity"
+                        >
+                          <Pencil size={13} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="detail-meta">
+                      <span>{detail.unit}</span>
+                      <StatusPill status={detail.status} />
+                      <span className="label-mono">v{detail.version}</span>
+                      {detail.approved_at && (
+                        <span className="label-mono">
+                          approved {timeAgo(detail.approved_at)}
+                        </span>
+                      )}
+                    </div>
+                    {detail.description && (
+                      <p className="page-sub">{detail.description}</p>
+                    )}
+                  </>
                 )}
               </div>
               <div className="detail-actions">
@@ -595,7 +648,7 @@ function Detail({
                     Approve this version
                   </button>
                 )}
-                {detail.status === "approved" && (
+                {detail.status === "approved" && canRequestUpdate && (
                   <button
                     type="button"
                     className="btn btn-secondary"
@@ -613,15 +666,17 @@ function Detail({
                   <Copy size={13} />
                   Duplicate
                 </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={onArchive}
-                  title="Archive this workflow"
-                >
-                  <Trash2 size={13} />
-                  Archive
-                </button>
+                {canManage && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={onArchive}
+                    title="Archive this workflow"
+                  >
+                    <Trash2 size={13} />
+                    Archive
+                  </button>
+                )}
               </div>
             </div>
 
@@ -658,5 +713,105 @@ function Detail({
         )}
       </div>
     </div>
+  );
+}
+
+// -- Inline identity editor -------------------------------------------
+
+function IdentityEditor({
+  detail,
+  onSave,
+  onCancel,
+}: {
+  detail: WorkflowDetail;
+  onSave: (next: WorkflowDetail) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(detail.name);
+  const [unit, setUnit] = useState(detail.unit);
+  const [description, setDescription] = useState(detail.description ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!name.trim() || !unit.trim()) {
+      setError("Name and unit cannot be blank.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await editWorkflow(detail.id, {
+        name: name.trim(),
+        unit: unit.trim(),
+        description: description.trim() ? description.trim() : null,
+      });
+      onSave(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="identity-editor" onSubmit={submit}>
+      <div className="identity-editor-row">
+        <label className="label-mono" htmlFor="identity-name">
+          Name
+        </label>
+        <input
+          id="identity-name"
+          className="text-input"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          disabled={busy}
+          autoFocus
+        />
+      </div>
+      <div className="identity-editor-row">
+        <label className="label-mono" htmlFor="identity-unit">
+          Unit
+        </label>
+        <input
+          id="identity-unit"
+          className="text-input"
+          value={unit}
+          onChange={(event) => setUnit(event.target.value)}
+          disabled={busy}
+        />
+      </div>
+      <div className="identity-editor-row">
+        <label className="label-mono" htmlFor="identity-desc">
+          Description
+        </label>
+        <textarea
+          id="identity-desc"
+          className="text-input"
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+          disabled={busy}
+          placeholder="One sentence on what this workflow does."
+          rows={2}
+        />
+      </div>
+      {error && <div className="error">{error}</div>}
+      <div className="identity-editor-actions">
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={onCancel}
+          disabled={busy}
+        >
+          <XIcon size={13} />
+          Cancel
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={busy}>
+          <CheckCircle2 size={13} />
+          {busy ? "Saving" : "Save"}
+        </button>
+      </div>
+    </form>
   );
 }

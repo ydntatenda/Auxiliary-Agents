@@ -2,6 +2,7 @@ import { ArrowRight, ChevronDown, ChevronRight } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import {
+  CurrentUser,
   DeltaScope,
   Source,
   createWorkflow,
@@ -16,8 +17,13 @@ import AddSourcePanel from "../components/AddSourcePanel";
 import SourceCard from "../components/SourceCard";
 
 type Props = {
+  currentUser: CurrentUser;
   onCaptured: (workflowId: string, needsTranscription: boolean) => void;
-  updateContext?: { workflowId: string; scope: DeltaScope | null } | null;
+  updateContext?: {
+    workflowId: string;
+    scope: DeltaScope | null;
+    ownerId: string | null;
+  } | null;
 };
 
 type ContributorRole = "operator" | "approver" | "observer";
@@ -59,9 +65,23 @@ function buildAssembled(sources: Source[]): string {
     .join("\n\n");
 }
 
-export default function Capture({ onCaptured, updateContext }: Props) {
+export default function Capture({ currentUser, onCaptured, updateContext }: Props) {
   const inUpdateMode = !!updateContext;
   const [stage, setStage] = useState<Stage>(inUpdateMode ? "assembly" : "identity");
+  // In new-workflow mode the current user is trivially the owner, so any
+  // source they add is theirs to edit. In update mode the owner is passed
+  // in by App.tsx from the workflow-detail data.
+  const workflowOwnerId = inUpdateMode
+    ? updateContext?.ownerId ?? null
+    : currentUser.id;
+
+  function canEditSource(source: Source): boolean {
+    if (currentUser.role === "admin") return true;
+    if (workflowOwnerId !== null && workflowOwnerId === currentUser.id) {
+      return true;
+    }
+    return source.added_by !== null && source.added_by === currentUser.id;
+  }
 
   // Identity sub-stage state.
   const [name, setName] = useState("");
@@ -339,6 +359,7 @@ export default function Capture({ onCaptured, updateContext }: Props) {
               source={source}
               isFirst={index === 0}
               isLast={index === sortedSources.length - 1}
+              canEdit={canEditSource(source)}
               onRemove={() => void handleRemove(source.id)}
               onRetry={() => void handleRetry(source.id)}
               onLabelChange={(label) => void handleLabelChange(source.id, label)}

@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth_stub import get_current_user
+from app.core.authz import is_owner_or_admin
 from app.core.sop_cache import SopRenderError, render_or_load_sop
 from app.db.collaborators import (
     get_collaborator_role,
@@ -47,6 +48,7 @@ class WorkflowSummary(BaseModel):
     updated_at: datetime
     approved_at: datetime | None
     archived: bool
+    created_by: str | None
     collaborator_count: int
     source_count: int
     current_user_role: str | None
@@ -73,6 +75,7 @@ async def _summarise(
         updated_at=row.updated_at,
         approved_at=row.approved_at,
         archived=row.archived,
+        created_by=row.created_by,
         collaborator_count=await count_collaborators(session, row.id),
         source_count=await count_sources(session, row.id),
         current_user_role=user_role,
@@ -176,14 +179,27 @@ async def request_update(
 ) -> WorkflowSummary:
     """Move a workflow into pending_update and notify owner + reviewers.
 
-    Rejects with 409 if the workflow is already in pending_update; two
-    drafts cannot coexist.
+    Only a collaborator on the workflow, its owner, or an admin can
+    request an update. This stops a random org member from forcing an
+    approved workflow back into draft. Rejects with 409 if the workflow
+    is already in pending_update; two drafts cannot coexist.
     """
     user = get_current_user()
     try:
         row = await require_workflow_row(db, workflow_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    collaborator_role = await get_collaborator_role(db, row.id, user.id)
+    if not (is_owner_or_admin(row) or collaborator_role is not None):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Only a collaborator, the workflow owner, or an admin can "
+                "request an update."
+            ),
+        )
+
     if row.status == "pending_update":
         raise HTTPException(
             status_code=409,

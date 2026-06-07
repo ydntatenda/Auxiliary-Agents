@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.artifacts import write_json_artifact, write_text_artifact
 from app.core.auth_stub import get_current_user, get_member
+from app.core.authz import is_owner_or_admin
 from app.core.background import embed_workflow_task
 from app.db.collaborators import (
     get_collaborator_role,
@@ -79,6 +80,7 @@ class WorkflowSummary(BaseModel):
     version: int
     approved_at: datetime | None
     archived: bool
+    created_by: str | None
     collaborators: list[CollaboratorView]
     versions: list[VersionView]
     source_count: int
@@ -88,6 +90,17 @@ class WorkflowSummary(BaseModel):
 
 class DuplicateResponse(BaseModel):
     workflow_id: str
+
+
+class EditWorkflowPayload(BaseModel):
+    """PATCH body for workflow identity. All fields optional, server-side
+    rules: name/unit cannot be blank if provided, description can be set
+    to empty string to clear it.
+    """
+
+    name: str | None = None
+    unit: str | None = None
+    description: str | None = None
 
 
 @router.get("/{workflow_id}", response_model=WorkflowResponse)
@@ -183,6 +196,7 @@ async def get_summary(
         version=row.version,
         approved_at=row.approved_at,
         archived=row.archived,
+        created_by=row.created_by,
         collaborators=collab_views,
         versions=version_views,
         source_count=await count_sources(db, row.id),
@@ -221,9 +235,12 @@ async def extract(
 
     # Persist the description to the workflow row so the library can
     # surface it without having to round-trip through the Pydantic graph.
+    # If an owner or admin has already typed a description via PATCH
+    # /workflows/{id}, the operator-set value wins; extraction never
+    # silently overwrites it.
     async with async_session() as session:
         live = await session.get(WorkflowRow, row.id)
-        if live is not None:
+        if live is not None and live.description is None:
             live.description = workflow.description
             await session.commit()
 
@@ -283,13 +300,19 @@ async def delta_extract(
     except DeltaApplyError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    # The operator's typed name and unit are canonical. Defensively clamp
+    # them on the merged graph so the LLM cannot rename a workflow even
+    # if the prior graph drifted from the row.
+    merged.name = row.name
+    merged.unit = row.unit
     merged.updated_at = datetime.now(timezone.utc)
     await save_workflow(merged, status="clarifying")
 
-    # Mirror description back to the row in case the delta changed it.
+    # Mirror description back to the row only if the row has none set; an
+    # owner-set description survives a delta extraction.
     async with async_session() as session:
         live = await session.get(WorkflowRow, row.id)
-        if live is not None:
+        if live is not None and live.description is None:
             live.description = merged.description
             await session.commit()
     background_tasks.add_task(embed_workflow_task, row.id)
@@ -341,11 +364,84 @@ async def archive_workflow(
     workflow_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Soft-delete: flip archived and stamp archived_at."""
+    """Soft-delete: flip archived and stamp archived_at.
+
+    Only the workflow's owner (creator) or an admin can archive. Random
+    org members get 403.
+    """
     try:
         row = await require_workflow_row(db, workflow_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if not is_owner_or_admin(row):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the workflow owner or an admin can archive this workflow.",
+        )
     row.archived = True
     row.archived_at = datetime.now(timezone.utc)
     await db.commit()
+
+
+@router.patch("/{workflow_id}", response_model=WorkflowSummary)
+async def edit_workflow(
+    workflow_id: str,
+    payload: EditWorkflowPayload,
+    db: AsyncSession = Depends(get_db),
+) -> WorkflowSummary:
+    """Update a workflow's name, unit, or description.
+
+    Owner or admin only. If name or unit changes and the workflow already
+    has a graph, the graph's name/unit are kept in sync so the SOP header
+    stays consistent, and the SOP cache is invalidated so the next render
+    reflects the new values. An empty PATCH (no fields) is a 200 no-op.
+    """
+    try:
+        row = await require_workflow_row(db, workflow_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if not is_owner_or_admin(row):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the workflow owner or an admin can edit identity.",
+        )
+
+    name_unit_changed = False
+
+    if payload.name is not None:
+        stripped = payload.name.strip()
+        if not stripped:
+            raise HTTPException(status_code=422, detail="name cannot be blank")
+        if stripped != row.name:
+            row.name = stripped
+            name_unit_changed = True
+
+    if payload.unit is not None:
+        stripped = payload.unit.strip()
+        if not stripped:
+            raise HTTPException(status_code=422, detail="unit cannot be blank")
+        if stripped != row.unit:
+            row.unit = stripped
+            name_unit_changed = True
+
+    if payload.description is not None:
+        cleaned = payload.description.strip() or None
+        row.description = cleaned
+
+    if name_unit_changed and row.graph is not None:
+        # Sync the graph's name/unit so a subsequent extraction or render
+        # sees the operator-set values.
+        graph_dict = dict(row.graph)
+        graph_dict["name"] = row.name
+        graph_dict["unit"] = row.unit
+        row.graph = graph_dict
+        # Cache is invalid: a different name/unit would change the SOP
+        # header. Drop both so the next /sop GET re-renders.
+        row.sop_cache = None
+        row.sop_cache_graph_hash = None
+
+    await db.commit()
+    await db.refresh(row)
+
+    # Re-use the summary builder so the response shape matches GET /summary.
+    return await get_summary(workflow_id, db)

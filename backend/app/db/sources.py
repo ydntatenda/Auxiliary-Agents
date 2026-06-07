@@ -23,6 +23,7 @@ async def create_source_row(
     assembled_text: str | None = None,
     status: SourceStatus = "pending",
     meta: dict | None = None,
+    added_by: str | None = None,
 ) -> SourceRow:
     next_order = await session.scalar(
         select(func.coalesce(func.max(SourceRow.order) + 1, 0)).where(
@@ -39,6 +40,7 @@ async def create_source_row(
         assembled_text=assembled_text,
         status=status,
         meta=meta,
+        added_by=added_by,
     )
     session.add(row)
     await session.commit()

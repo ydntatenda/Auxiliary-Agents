@@ -32,6 +32,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.assembly import assemble_transcript
+from app.core.auth_stub import get_current_user
+from app.core.authz import can_edit_source
 from app.core.background import ingest_source_task
 from app.db.session import get_db
 from app.db.sources import (
@@ -84,6 +86,7 @@ class SourceResponse(BaseModel):
     modality: str
     label: str | None
     contributor_role: str | None
+    added_by: str | None
     status: str
     error: str | None
     meta: dict | None
@@ -123,6 +126,7 @@ def _to_source_response(row: SourceRow) -> SourceResponse:
         modality=row.modality,
         label=row.label,
         contributor_role=row.contributor_role,
+        added_by=row.added_by,
         status=row.status,
         error=row.error,
         meta=row.meta,
@@ -151,15 +155,20 @@ async def create_workflow(
 ) -> CreateWorkflowResponse:
     """Create the workflow shell.
 
+    The current user is recorded as `created_by` (the owner). For the
+    auth-stub MVP this is whichever member is hardcoded as logged in.
+
     contributor_role is accepted for API symmetry with the source endpoint,
     but it is the source row that records the role; the frontend re-sends it
     on each subsequent add_source call. No workflow-level column.
     """
+    user = get_current_user()
     row = await create_workflow_row(
         session=db,
         name=payload.name,
         unit=payload.unit,
         status="capturing",
+        created_by=user.id,
     )
     return CreateWorkflowResponse(workflow_id=str(row.id), status=row.status)
 
@@ -238,6 +247,7 @@ async def _add_source_json(
     modality = body.get("modality")
     label = body.get("label")
     contributor_role = body.get("contributor_role")
+    added_by = get_current_user().id
 
     if modality == "connector":
         raise HTTPException(
@@ -262,6 +272,7 @@ async def _add_source_json(
             assembled_text=result.assembled_text,
             status="ready",
             meta=result.meta,
+            added_by=added_by,
         )
         await assemble_transcript(workflow_uuid)
         return _to_source_response(source)
@@ -284,6 +295,7 @@ async def _add_source_json(
             assembled_text=result.assembled_text,
             status="ready",
             meta=result.meta,
+            added_by=added_by,
         )
         await assemble_transcript(workflow_uuid)
         return _to_source_response(source)
@@ -307,6 +319,7 @@ async def _add_source_multipart(
     label = form.get("label") or None
     contributor_role = form.get("contributor_role") or None
     upload = form.get("file")
+    added_by = get_current_user().id
 
     if modality == "connector":
         raise HTTPException(
@@ -331,6 +344,7 @@ async def _add_source_multipart(
             assembled_text=result.assembled_text,
             status="ready",
             meta=result.meta,
+            added_by=added_by,
         )
         await assemble_transcript(workflow_uuid)
         return _to_source_response(source)
@@ -365,6 +379,7 @@ async def _add_source_multipart(
             assembled_text=result.assembled_text,
             status="ready",
             meta=result.meta,
+            added_by=added_by,
         )
         await assemble_transcript(workflow_uuid)
         return _to_source_response(source)
@@ -382,6 +397,7 @@ async def _add_source_multipart(
             raw_path=None,
             contributor_role=contributor_role,
             status="pending",
+            added_by=added_by,
         )
         raw_path = await _save_upload(
             str(workflow_uuid),
@@ -415,18 +431,31 @@ async def update_source(
 ) -> SourceResponse:
     """Edit a source's label or move it up/down in the assembly order.
 
+    Only the user who added the source, the workflow owner, or an admin
+    may change it. Other collaborators see the controls disabled in the
+    UI; the 403 here is the backend stop.
+
     Reordering is expressed as a swap with the immediate neighbour, which is
     what the up/down arrow UI needs. Anything fancier (drag-and-drop, jump
     to position) is a future change to this same endpoint.
     """
     try:
-        await require_workflow_row(db, workflow_id)
+        workflow_row = await require_workflow_row(db, workflow_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     try:
         source = await require_source(db, UUID(workflow_id), UUID(source_id))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    if not can_edit_source(workflow_row, source.added_by):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Only the person who added this source, the workflow owner, "
+                "or an admin can change it."
+            ),
+        )
 
     touched = False
 
@@ -475,9 +504,23 @@ async def remove_source(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     try:
-        await require_workflow_row(db, workflow_id)
+        workflow_row = await require_workflow_row(db, workflow_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    try:
+        source = await require_source(db, UUID(workflow_id), UUID(source_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    if not can_edit_source(workflow_row, source.added_by):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Only the person who added this source, the workflow owner, "
+                "or an admin can remove it."
+            ),
+        )
+
     deleted = await delete_source(db, UUID(workflow_id), UUID(source_id))
     if not deleted:
         raise HTTPException(status_code=404, detail="Source not found")
@@ -560,11 +603,13 @@ async def capture_text(
     payload: TextCapturePayload,
     db: AsyncSession = Depends(get_db),
 ) -> CaptureResponse:
+    user = get_current_user()
     workflow_row = await create_workflow_row(
         session=db,
         name=payload.name,
         unit=payload.unit,
         status="capturing",
+        created_by=user.id,
     )
     result = await ingest_source("text", raw_text=payload.text)
     await create_source_row(
@@ -577,6 +622,7 @@ async def capture_text(
         assembled_text=result.assembled_text,
         status="ready",
         meta=result.meta,
+        added_by=user.id,
     )
     await assemble_transcript(workflow_row.id)
     await update_status(workflow_id=workflow_row.id, status="transcribed")
@@ -631,11 +677,13 @@ async def _legacy_media_capture(
     db: AsyncSession,
     background_tasks: BackgroundTasks,
 ) -> CaptureResponse:
+    user = get_current_user()
     workflow_row = await create_workflow_row(
         session=db,
         name=name,
         unit=unit,
         status="transcribing",
+        created_by=user.id,
     )
     source = await create_source_row(
         session=db,
@@ -645,6 +693,7 @@ async def _legacy_media_capture(
         raw_path=None,
         contributor_role=None,
         status="pending",
+        added_by=user.id,
     )
     raw_path = await _save_upload(str(workflow_row.id), str(source.id), file, default_ext)
     source.raw_path = raw_path

@@ -18,6 +18,7 @@ async def create_workflow_row(
     name: str,
     unit: str,
     status: str = "capturing",
+    created_by: str | None = None,
 ) -> WorkflowRow:
     row = WorkflowRow(
         name=name,
@@ -25,6 +26,7 @@ async def create_workflow_row(
         assembled_transcript=None,
         status=status,
         graph=None,
+        created_by=created_by,
     )
     session.add(row)
     await session.commit()

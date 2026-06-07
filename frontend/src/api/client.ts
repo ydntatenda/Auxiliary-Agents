@@ -33,6 +33,7 @@ export type Source = {
   modality: string;
   label: string | null;
   contributor_role: string | null;
+  added_by: string | null;
   status: SourceStatus;
   error: string | null;
   meta: Record<string, unknown> | null;
@@ -237,6 +238,7 @@ export type WorkflowSummary = {
   updated_at: string;
   approved_at: string | null;
   archived: boolean;
+  created_by: string | null;
   collaborator_count: number;
   source_count: number;
   current_user_role: string | null;
@@ -261,6 +263,17 @@ export async function approveWorkflow(workflowId: string) {
 export async function requestUpdate(workflowId: string) {
   return request<WorkflowSummary>(`/library/${workflowId}/request_update`, {
     method: "POST",
+  });
+}
+
+export async function editWorkflow(
+  workflowId: string,
+  fields: { name?: string; unit?: string; description?: string | null },
+) {
+  return request<WorkflowDetail>(`/workflows/${workflowId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
   });
 }
 

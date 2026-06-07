@@ -17,6 +17,10 @@ type Stage = "library" | "capture" | "processing" | "clarify" | "sop";
 export type UpdateContext = {
   workflowId: string;
   scope: DeltaScope | null;
+  // The workflow's `created_by`. Capture needs this to decide whether the
+  // current user can edit (delete, rename, reorder) sources added by
+  // earlier collaborators. Null when unknown, which keeps the UI safe.
+  ownerId: string | null;
 };
 
 export default function App() {
@@ -57,15 +61,15 @@ export default function App() {
     setStage("capture");
   }
 
-  function addSourcesToExisting(id: string) {
+  function addSourcesToExisting(id: string, ownerId: string | null) {
     setWorkflowId(id);
-    setUpdateContext({ workflowId: id, scope: null });
+    setUpdateContext({ workflowId: id, scope: null, ownerId });
     setStage("capture");
   }
 
-  function updateExisting(id: string, scope: DeltaScope) {
+  function updateExisting(id: string, scope: DeltaScope, ownerId: string | null) {
     setWorkflowId(id);
-    setUpdateContext({ workflowId: id, scope });
+    setUpdateContext({ workflowId: id, scope, ownerId });
     setStage("capture");
   }
 
@@ -100,8 +104,9 @@ export default function App() {
           </div>
         </div>
       )}
-      {stage === "capture" && (
+      {stage === "capture" && user && (
         <Capture
+          currentUser={user}
           onCaptured={handleCaptured}
           updateContext={updateContext}
         />
