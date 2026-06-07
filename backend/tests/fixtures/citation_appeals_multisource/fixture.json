@@ -1,0 +1,122 @@
+{
+  "id": "citation_appeals_multisource",
+  "description": "Multi-source variant. The operator walkthrough covers the 11 procedural steps loosely; the Merge Accounts policy (P&T-SOP-1.0015) describes only the account-merge sub-procedure with its specific terminology. The two sources overlap deliberately at the merge step. A faithful extraction reconciles them into one richer merge step that carries the Account Number Correction terminology, the irreversibility, and the automatic record transfer from the policy. A concatenating extractor appends the policy's procedure as extra steps and pushes the total above the band.",
+  "workflow_name": "Citation appeals",
+  "unit": "Parking and Transportation",
+  "sources": [
+    {
+      "label": "operator walkthrough",
+      "modality": "voice",
+      "contributor_role": "operator",
+      "transcript_path": "sources/operator_walkthrough.txt"
+    },
+    {
+      "label": "merge accounts policy",
+      "modality": "document",
+      "contributor_role": "approver",
+      "transcript_path": "sources/merge_accounts_policy.txt"
+    }
+  ],
+  "scoring": {
+    "step_count_band": [9, 13],
+    "gap_recall_threshold": 0.8,
+    "gap_severity_threshold": 0.8,
+    "terminal_threshold": 0.8,
+    "decision_rule_threshold": 0.8,
+    "expected_steps": [
+      {
+        "concept": "open_pending_adjudications",
+        "keywords": ["Pending Adjudications"],
+        "terminal": false
+      },
+      {
+        "concept": "open_citation_record",
+        "keywords": ["View Ticket", "citation"],
+        "terminal": false
+      },
+      {
+        "concept": "verify_citation_details",
+        "keywords": ["license plate", "verify"],
+        "terminal": false,
+        "has_decision_rules": true,
+        "expected_min_branches": 2
+      },
+      {
+        "concept": "open_adjudication_section",
+        "keywords": ["Adjudication", "submitted"],
+        "terminal": false
+      },
+      {
+        "concept": "open_full_adjudication_record",
+        "keywords": ["View Adjudication", "record"],
+        "terminal": false
+      },
+      {
+        "concept": "verify_account_merge_duplicates",
+        "keywords": ["merge", "duplicate"],
+        "terminal": false
+      },
+      {
+        "concept": "enter_decision_and_justification",
+        "keywords": ["Uphold", "Dismiss", "Reduce", "justification"],
+        "terminal": false,
+        "has_decision_rules": true,
+        "expected_min_branches": 3
+      },
+      {
+        "concept": "select_letter_template",
+        "keywords": ["Delivery Options", "Citation Appeal Decision"],
+        "terminal": false
+      },
+      {
+        "concept": "save_and_enter_reduction",
+        "keywords": ["Adjudicate", "reduction", "50%"],
+        "terminal": false,
+        "has_decision_rules": true,
+        "expected_min_branches": 2
+      },
+      {
+        "concept": "review_decision_letter",
+        "keywords": ["letter", "citation number", "amount due"],
+        "terminal": false
+      },
+      {
+        "concept": "send_letter_and_update_status",
+        "keywords": ["Send", "status", "updates"],
+        "terminal": true
+      }
+    ],
+    "expected_gaps": [
+      {
+        "concept": "reduction_criteria_undefined",
+        "keywords": ["reduce", "criteria"],
+        "severity": "critical"
+      },
+      {
+        "concept": "late_appeal_discretion",
+        "keywords": ["late", "case-by-case"],
+        "severity": "important"
+      },
+      {
+        "concept": "second_level_eligibility_new_information",
+        "keywords": ["second", "new information"],
+        "severity": "important"
+      },
+      {
+        "concept": "name_mismatch_hold_window",
+        "keywords": ["name", "mismatch", "hold"],
+        "severity": "important"
+      },
+      {
+        "concept": "system_unavailable_recovery",
+        "keywords": ["system", "unavailable"],
+        "severity": "minor"
+      },
+      {
+        "concept": "sla_holiday_variance",
+        "keywords": ["holiday", "SLA"],
+        "severity": "minor"
+      }
+    ]
+  }
+}

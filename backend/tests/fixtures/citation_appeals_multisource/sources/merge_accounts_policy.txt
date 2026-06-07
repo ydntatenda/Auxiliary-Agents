@@ -1,0 +1,11 @@
+Merge Accounts (P&T-SOP-1.0015)
+
+Purpose. Some appellants submit citation appeals under a temporary GTxxxxx account before AIMS recognises them as Institute affiliates. When AIMS later resolves the temporary account to a permanent GTID account, the two accounts must be merged before any adjudication is entered. Failure to merge first leaves the appellant with duplicate records on two accounts and breaks downstream reporting.
+
+The merge is performed from the Account Number Correction function in AIMS. The operator opens the appellant's record and selects Account Number Correction, supplies the temporary GTxxxxx account as the source and the permanent GTID account as the target, and confirms the merge.
+
+On confirmation, AIMS transfers every record from the source account to the target account automatically. Citations, prior appeals, adjudications, payment history, vehicle registrations, and contact details all move with the appellant. Nothing is left behind on the temporary account, which is then closed.
+
+The merge is irreversible. Once Account Number Correction has run there is no way to split the records back out. For that reason a brief check of the affiliation status (Faculty, Staff, or Student) is required before confirming the merge, since merging a guest account into a permanent GTID record cannot be undone.
+
+When the merge is required. Whenever the appellant on a citation appeal is an Institute affiliate (Faculty, Staff, or Student) and the appeal was submitted under a temporary GTxxxxx account, the operator runs Account Number Correction to merge into the permanent GTID account before continuing with the adjudication. Guests do not require a merge.

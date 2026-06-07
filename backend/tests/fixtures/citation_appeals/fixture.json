@@ -1,0 +1,109 @@
+{
+  "id": "citation_appeals",
+  "description": "Single-source golden for the citation appeals SOP. The transcript is an operator narrative covering the 11 procedural steps plus the policy ambiguities that the SOP and the appeals process map expose as real gaps. Keyword lists are discriminating: every concept is pinned by a term unique to that step.",
+  "workflow_name": "Citation appeals",
+  "unit": "Parking and Transportation",
+  "transcript_path": "transcript.txt",
+  "scoring": {
+    "step_count_band": [9, 13],
+    "gap_recall_threshold": 0.8,
+    "gap_severity_threshold": 0.8,
+    "terminal_threshold": 0.8,
+    "decision_rule_threshold": 0.8,
+    "expected_steps": [
+      {
+        "concept": "open_pending_adjudications",
+        "keywords": ["Pending Adjudications"],
+        "terminal": false
+      },
+      {
+        "concept": "open_citation_record",
+        "keywords": ["View Ticket", "citation"],
+        "terminal": false
+      },
+      {
+        "concept": "verify_citation_details",
+        "keywords": ["license plate", "verify"],
+        "terminal": false,
+        "has_decision_rules": true,
+        "expected_min_branches": 2
+      },
+      {
+        "concept": "open_adjudication_section",
+        "keywords": ["Adjudication", "submitted"],
+        "terminal": false
+      },
+      {
+        "concept": "open_full_adjudication_record",
+        "keywords": ["View Adjudication", "record"],
+        "terminal": false
+      },
+      {
+        "concept": "verify_account_merge_duplicates",
+        "keywords": ["merge", "duplicate"],
+        "terminal": false
+      },
+      {
+        "concept": "enter_decision_and_justification",
+        "keywords": ["Uphold", "Dismiss", "Reduce", "justification"],
+        "terminal": false,
+        "has_decision_rules": true,
+        "expected_min_branches": 3
+      },
+      {
+        "concept": "select_letter_template",
+        "keywords": ["Delivery Options", "Citation Appeal Decision"],
+        "terminal": false
+      },
+      {
+        "concept": "save_and_enter_reduction",
+        "keywords": ["Adjudicate", "reduction", "50%"],
+        "terminal": false,
+        "has_decision_rules": true,
+        "expected_min_branches": 2
+      },
+      {
+        "concept": "review_decision_letter",
+        "keywords": ["letter", "citation number", "amount due"],
+        "terminal": false
+      },
+      {
+        "concept": "send_letter_and_update_status",
+        "keywords": ["Send", "status", "updates"],
+        "terminal": true
+      }
+    ],
+    "expected_gaps": [
+      {
+        "concept": "reduction_criteria_undefined",
+        "keywords": ["reduce", "criteria"],
+        "severity": "critical"
+      },
+      {
+        "concept": "late_appeal_discretion",
+        "keywords": ["late", "case-by-case"],
+        "severity": "important"
+      },
+      {
+        "concept": "second_level_eligibility_new_information",
+        "keywords": ["second", "new information"],
+        "severity": "important"
+      },
+      {
+        "concept": "name_mismatch_hold_window",
+        "keywords": ["name", "mismatch", "hold"],
+        "severity": "important"
+      },
+      {
+        "concept": "system_unavailable_recovery",
+        "keywords": ["system", "unavailable"],
+        "severity": "minor"
+      },
+      {
+        "concept": "sla_holiday_variance",
+        "keywords": ["holiday", "SLA"],
+        "severity": "minor"
+      }
+    ]
+  }
+}
