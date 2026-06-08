@@ -5,6 +5,13 @@ from typing import Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+# Absolute path to the backend directory. Computed once at import so the
+# .env loader finds the files regardless of the working directory the
+# command was launched from. `__file__` is `backend/app/config.py`;
+# `.parent.parent` is `backend/`.
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+
+
 class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://agentic_ops:agentic_ops@localhost:5432/agentic_ops"
     frontend_origin: str = "http://localhost:5173"
@@ -26,8 +33,13 @@ class Settings(BaseSettings):
     openrouter_clarification_model: str = "moonshotai/kimi-k2.6"
 
     model_config = SettingsConfigDict(
-        env_file=(".env", ".env.local"),
-        env_file_encoding="utf-8",
+        # Absolute paths so the loader works from any working directory.
+        # utf-8-sig transparently strips a leading byte-order mark, so a
+        # .env saved by a Windows tool that inserts a BOM still loads
+        # cleanly (without the BOM the first key name becomes
+        # "﻿DATABASE_URL" and the loader silently drops it).
+        env_file=(BACKEND_DIR / ".env", BACKEND_DIR / ".env.local"),
+        env_file_encoding="utf-8-sig",
         extra="ignore",
     )
 
