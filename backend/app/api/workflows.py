@@ -359,7 +359,7 @@ async def duplicate_workflow(
     return DuplicateResponse(workflow_id=str(new_id))
 
 
-@router.delete("/{workflow_id}", status_code=204, response_class=None)
+@router.delete("/{workflow_id}", status_code=204)
 async def archive_workflow(
     workflow_id: str,
     db: AsyncSession = Depends(get_db),

@@ -57,7 +57,7 @@ async def list_notifications(
     return [await _enrich(db, row) for row in rows]
 
 
-@router.post("/{notification_id}/read", status_code=204, response_class=None)
+@router.post("/{notification_id}/read", status_code=204)
 async def read_one(
     notification_id: str,
     db: AsyncSession = Depends(get_db),

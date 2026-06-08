@@ -137,7 +137,6 @@ async def add_workflow_collaborator(
 @router.delete(
     "/workflows/{workflow_id}/collaborators/{member_id}",
     status_code=204,
-    response_class=None,
 )
 async def delete_workflow_collaborator(
     workflow_id: str,

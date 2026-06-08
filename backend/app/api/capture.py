@@ -496,7 +496,6 @@ async def _find_swap_neighbour(
 @router.delete(
     "/workflows/{workflow_id}/sources/{source_id}",
     status_code=204,
-    response_class=None,
 )
 async def remove_source(
     workflow_id: str,
