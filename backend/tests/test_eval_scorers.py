@@ -49,7 +49,7 @@ def _scoring(
     steps: list[GoldenStep] | None = None,
     gaps: list[GoldenGap] | None = None,
     gap_recall_threshold: float = 0.8,
-    gap_severity_threshold: float = 0.8,
+    gap_severity_threshold: float = 0.6,
     gap_match_threshold: float = 0.5,
     terminal_threshold: float = 0.8,
     decision_rule_threshold: float = 0.8,

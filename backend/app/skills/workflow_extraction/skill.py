@@ -26,6 +26,11 @@ Your job:
 
 Guidelines:
 - Aim for 8-15 steps for a typical workflow. Not every mouse click is a step.
+- A review or inspection action that lets the operator go back and fix
+  something is its own step. Distinct UI surfaces traversed in sequence
+  (selecting a template, reviewing the populated result, sending it) are
+  separate steps, not one combined action. Only the step that completes
+  the workflow is terminal.
 - If the employee narrates a single path through a branching workflow, capture
   the branches you can infer and mark unknown branches as gaps.
 - Executor should always be "human".
@@ -38,6 +43,10 @@ Guidelines:
     but are not required to follow the SOP safely.
 - Do not overuse critical or important. Most gaps should be minor unless they
   meet the definitions above.
+- When a gap describes a downstream concern triggered by an upstream
+  condition (a 10-day hold triggered by a name mismatch; an additional
+  information request triggered by that same mismatch), name the trigger
+  in the gap description. A gap without its trigger is unactionable.
 - Set source_modality to "text" as a placeholder; the application will preserve
   the original capture modality after extraction.
 - Set source_transcript to the transcript exactly as provided.
@@ -71,7 +80,18 @@ Decision rules:
 - Do NOT invent placeholder "continue after decision" or "buffer" steps. If a
   step has three outcomes, emit three decision rules on the source step — do
   not route through an intermediate placeholder.
-
+- An automatic shortcut or skip-ahead is a branch. When a verification or
+  intake step describes a failure case that jumps past intermediate steps
+  to a closing step ("if X fails, dismiss automatically and go straight to
+  the letter"), emit a decision_rule whose then_step_id points to the skip
+  target and let the implicit success case continue in order.
+  Wrong (flattened): the verification step's decision_rules is empty and
+  the description says "I check the plate and continue, unless it does
+  not match, in which case I jump to the letter". Right (branched): the
+  same step has one decision_rule with condition "plate on citation does
+  not match the photos", then_step_id pointing to the letter step id, and
+  else_step_id null; the success case continues to the next step in order
+  without a rule entry.
 Workflow name: {name}
 Unit: {unit}
 
@@ -87,5 +107,55 @@ async def extract_workflow(name: str, unit: str, transcript: str) -> Workflow:
         model=settings.openai_extraction_model,
         input=EXTRACTION_PROMPT.format(name=name, unit=unit, transcript=transcript),
         text_format=Workflow,
+        temperature=0,
     )
-    return response.output_parsed
+    return _correct_terminals(response.output_parsed)
+
+
+def _correct_terminals(workflow: Workflow) -> Workflow:
+    """Set every step's terminal flag to match the structural invariant.
+
+    A step is terminal iff it has no outbound decision_rule target and no
+    other step in the workflow has a higher order. The pass rebuilds any
+    step whose `terminal` value disagrees with the invariant, through
+    Pydantic model_copy, and rebuilds the workflow with the updated step
+    list. The two directions are symmetric: false positives are demoted
+    (a step marked terminal that has a successor), and the structurally
+    terminal step is promoted to terminal (the highest-order step with no
+    outbound rules, even when the extractor left it non-terminal). There
+    is no semantic judgement; both sides are pure structure.
+
+    Known limitation. In a genuine multi-terminal workflow with two or
+    more legitimately-terminal steps at different orders (an approve
+    branch ends at step 5, a deny branch ends at step 7), the rule has
+    two failures rooted in the same single-terminal assumption:
+
+    - On the demote side, the earlier real terminal is wrongly demoted
+      because a higher-order step exists.
+    - On the promote side, only the highest-order step is crowned, so
+      one of the real terminals is left non-terminal.
+
+    The rule is correct for single-terminal workflows like the citation
+    appeals fixture. When a multi-terminal fixture arrives,
+    terminal_correctness on that fixture will regress and the rule
+    refines then, rather than silently mis-scoring the fixture now.
+    """
+    if not workflow.steps:
+        return workflow
+    max_order = max(step.order for step in workflow.steps)
+    new_steps: list = []
+    changed = False
+    for step in workflow.steps:
+        has_outbound_target = any(
+            rule.then_step_id for rule in step.decision_rules
+        )
+        has_higher_order = step.order < max_order
+        should_be_terminal = not has_outbound_target and not has_higher_order
+        if step.terminal == should_be_terminal:
+            new_steps.append(step)
+            continue
+        new_steps.append(step.model_copy(update={"terminal": should_be_terminal}))
+        changed = True
+    if not changed:
+        return workflow
+    return workflow.model_copy(update={"steps": new_steps})

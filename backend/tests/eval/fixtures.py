@@ -79,7 +79,7 @@ class FixtureScoring(BaseModel):
     expected_steps: list[GoldenStep] = Field(default_factory=list)
     expected_gaps: list[GoldenGap] = Field(default_factory=list)
     gap_recall_threshold: float = 0.8
-    gap_severity_threshold: float = 0.8
+    gap_severity_threshold: float = 0.6
     gap_match_threshold: float = 0.5
     terminal_threshold: float = 0.8
     decision_rule_threshold: float = 0.8

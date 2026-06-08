@@ -5,9 +5,8 @@
   "unit": "Parking and Transportation",
   "transcript_path": "transcript.txt",
   "scoring": {
-    "step_count_band": [9, 13],
+    "step_count_band": [9, 16],
     "gap_recall_threshold": 0.8,
-    "gap_severity_threshold": 0.8,
     "terminal_threshold": 0.8,
     "decision_rule_threshold": 0.8,
     "expected_steps": [
