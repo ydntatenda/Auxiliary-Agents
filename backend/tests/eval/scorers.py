@@ -15,8 +15,10 @@ spec calls out that a single generic word will cause false matches.
 """
 from __future__ import annotations
 
+import math
 import re
 from collections import Counter
+from dataclasses import dataclass
 
 from app.models.graph import Gap, Step, Workflow
 
@@ -38,15 +40,52 @@ def _match_step(steps: list[Step], keywords: list[str]) -> Step | None:
     return None
 
 
-def _match_gap(gaps: list[Gap], keywords: list[str]) -> Gap | None:
+@dataclass
+class _GapCandidate:
+    """The best gap candidate for a given golden gap, match or not.
+
+    `cleared_threshold` says whether the candidate counts as a match;
+    `hits` always carries the keywords that landed on this candidate so
+    the report can show why a near miss almost matched.
+    """
+
+    gap: Gap | None
+    hits: list[str]
+    overlap: float
+    cleared_threshold: bool
+
+
+def _best_gap_candidate(
+    gaps: list[Gap], keywords: list[str], threshold: float
+) -> _GapCandidate:
+    """Return the highest-overlap gap and the keywords that landed.
+
+    Counts keywords (case-insensitive substring) against each candidate's
+    description and picks the one with the most hits. `threshold` is the
+    fraction of golden keywords that must hit for the match to count;
+    `max(1, ceil(n * threshold))` is the minimum required, so even a
+    threshold of 0 still requires at least one hit. Returns the candidate
+    even when below threshold so the scorer can surface a useful diagnostic
+    instead of a bare miss.
+    """
     if not keywords:
-        return None
-    needles = [kw.lower() for kw in keywords]
+        return _GapCandidate(None, [], 0.0, False)
+    total = len(keywords)
+    required = max(1, math.ceil(total * threshold))
+    lowered = [(kw, kw.lower()) for kw in keywords]
+    best_gap: Gap | None = None
+    best_hits: list[str] = []
     for gap in gaps:
         haystack = gap.description.lower()
-        if all(needle in haystack for needle in needles):
-            return gap
-    return None
+        hits = [original for (original, needle) in lowered if needle in haystack]
+        if len(hits) > len(best_hits):
+            best_gap = gap
+            best_hits = hits
+    if best_gap is None:
+        return _GapCandidate(None, [], 0.0, False)
+    overlap = len(best_hits) / total
+    cleared = len(best_hits) >= required
+    return _GapCandidate(best_gap, best_hits, overlap, cleared)
 
 
 # -- Axis 1: step count band ----------------------------------------
@@ -130,34 +169,40 @@ def score_gap_recall_severity(
             skipped=True,
         )
 
+    threshold = scoring.gap_match_threshold
     matched = 0
     correct_severity = 0
     per_gap: list[dict] = []
     for golden in expected:
-        match = _match_gap(extracted.gaps, golden.keywords)
-        if match is None:
+        candidate = _best_gap_candidate(extracted.gaps, golden.keywords, threshold)
+        total_keywords = len(golden.keywords)
+        if candidate.cleared_threshold and candidate.gap is not None:
+            severity_ok = candidate.gap.severity == golden.severity
+            if severity_ok:
+                correct_severity += 1
+            matched += 1
+            per_gap.append(
+                {
+                    "concept": golden.concept,
+                    "matched": True,
+                    "matched_keywords": candidate.hits,
+                    "overlap": round(candidate.overlap, 3),
+                    "severity_expected": golden.severity,
+                    "severity_found": candidate.gap.severity,
+                    "severity_correct": severity_ok,
+                }
+            )
+        else:
             per_gap.append(
                 {
                     "concept": golden.concept,
                     "matched": False,
+                    "closest_hits": candidate.hits,
+                    "closest_overlap": round(candidate.overlap, 3),
                     "severity_expected": golden.severity,
                     "severity_found": None,
                 }
             )
-            continue
-        matched += 1
-        severity_ok = match.severity == golden.severity
-        if severity_ok:
-            correct_severity += 1
-        per_gap.append(
-            {
-                "concept": golden.concept,
-                "matched": True,
-                "severity_expected": golden.severity,
-                "severity_found": match.severity,
-                "severity_correct": severity_ok,
-            }
-        )
 
     total = len(expected)
     recall = matched / total
@@ -178,14 +223,25 @@ def score_gap_recall_severity(
             f"severity accuracy {severity_accuracy:.2f} below threshold "
             f"{scoring.gap_severity_threshold:.2f}"
         )
-    for entry in per_gap:
+    for entry, golden in zip(per_gap, expected):
+        n = len(golden.keywords)
         if not entry["matched"]:
-            messages.append(
-                f"gap \"{entry['concept']}\" not matched in extracted graph"
-            )
+            hits = entry["closest_hits"]
+            if hits:
+                hit_words = ", ".join(f'"{w}"' for w in hits)
+                messages.append(
+                    f'gap "{entry["concept"]}" not matched; closest extracted gap '
+                    f"hit {len(hits)} of {n} keywords ({hit_words})"
+                )
+            else:
+                messages.append(
+                    f'gap "{entry["concept"]}" not matched in extracted graph'
+                )
         elif not entry.get("severity_correct", True):
             messages.append(
-                f"gap \"{entry['concept']}\" matched, severity expected "
+                f'gap "{entry["concept"]}" matched '
+                f"({len(entry['matched_keywords'])}/{n} keywords, overlap "
+                f"{entry['overlap']:.2f}); severity expected "
                 f"{entry['severity_expected']}, found {entry['severity_found']}"
             )
 
@@ -198,6 +254,7 @@ def score_gap_recall_severity(
             "severity_accuracy": round(severity_accuracy, 3),
             "matched": matched,
             "total": total,
+            "gap_match_threshold": threshold,
             "per_gap": per_gap,
         },
         messages=messages,

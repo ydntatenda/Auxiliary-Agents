@@ -222,3 +222,61 @@ def test_format_report_renders_skip_and_pass(tmp_path, monkeypatch) -> None:
     assert "SKIP" in rendered
     assert "PASS" in rendered
     assert "Fixture: good" in rendered
+
+
+def test_run_one_populates_extracted_gaps(tmp_path, monkeypatch) -> None:
+    fixture_dir = _build_fixture(tmp_path, "good")
+    monkeypatch.setattr(runner, "extract_workflow", AsyncMock(return_value=_good_extracted()))
+    loaded = load_fixture(fixture_dir)
+    report = asyncio.run(runner.run_one(loaded))
+    assert len(report.extracted_gaps) == 1
+    view = report.extracted_gaps[0]
+    assert view.severity == "critical"
+    assert "senior approval" in view.description
+
+
+def test_format_report_show_gaps_includes_dump(tmp_path, monkeypatch) -> None:
+    fixture_dir = _build_fixture(tmp_path, "good")
+    monkeypatch.setattr(runner, "extract_workflow", AsyncMock(return_value=_good_extracted()))
+    loaded = load_fixture(fixture_dir)
+    report = asyncio.run(runner.run_one(loaded))
+    rendered = format_report(report, show_gaps=True)
+    assert "Extractor surfaced 1 gaps" in rendered
+    assert "[critical]" in rendered
+    assert "senior approval" in rendered
+
+
+def test_format_report_show_gaps_false_omits_dump(tmp_path, monkeypatch) -> None:
+    fixture_dir = _build_fixture(tmp_path, "good")
+    monkeypatch.setattr(runner, "extract_workflow", AsyncMock(return_value=_good_extracted()))
+    loaded = load_fixture(fixture_dir)
+    report = asyncio.run(runner.run_one(loaded))
+    rendered = format_report(report)
+    assert "Extractor surfaced" not in rendered
+
+
+def test_format_gap_dump_handles_quiet_extractor() -> None:
+    from tests.eval.report import EvalReport, format_gap_dump
+
+    report = EvalReport(fixture_id="quiet", results=[], extracted_gaps=[])
+    rendered = format_gap_dump(report)
+    assert rendered == "  Extractor surfaced no gaps."
+
+
+def test_main_show_gaps_flag_dumps_extractor_gaps(tmp_path, monkeypatch, capsys) -> None:
+    fixture_dir = _build_fixture(tmp_path, "good")
+    monkeypatch.setattr(runner, "extract_workflow", AsyncMock(return_value=_good_extracted()))
+    code = runner.main(["--show-gaps", str(fixture_dir)])
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "Extractor surfaced 1 gaps" in captured.out
+    assert "senior approval" in captured.out
+
+
+def test_main_show_gaps_flag_works_after_path(tmp_path, monkeypatch, capsys) -> None:
+    fixture_dir = _build_fixture(tmp_path, "good")
+    monkeypatch.setattr(runner, "extract_workflow", AsyncMock(return_value=_good_extracted()))
+    code = runner.main([str(fixture_dir), "--show-gaps"])
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "Extractor surfaced 1 gaps" in captured.out

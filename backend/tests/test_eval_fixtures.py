@@ -176,3 +176,25 @@ def test_discover_fixtures_single_directory_with_fixture(tmp_path: Path) -> None
 
 def test_discover_fixtures_empty_returns_empty(tmp_path: Path) -> None:
     assert discover_fixtures(tmp_path) == []
+
+
+def test_gap_match_threshold_defaults_to_half(tmp_path: Path) -> None:
+    fixture_dir = tmp_path / "thresh"
+    fixture_dir.mkdir()
+    (fixture_dir / "transcript.txt").write_text("x", encoding="utf-8")
+    payload = _minimal_fixture_payload()
+    # Deliberately omit gap_match_threshold; default should kick in.
+    (fixture_dir / "fixture.json").write_text(json.dumps(payload), encoding="utf-8")
+    loaded = load_fixture(fixture_dir)
+    assert loaded.fixture.scoring.gap_match_threshold == 0.5
+
+
+def test_gap_match_threshold_overrides_load(tmp_path: Path) -> None:
+    fixture_dir = tmp_path / "thresh2"
+    fixture_dir.mkdir()
+    (fixture_dir / "transcript.txt").write_text("x", encoding="utf-8")
+    payload = _minimal_fixture_payload()
+    payload["scoring"]["gap_match_threshold"] = 0.75
+    (fixture_dir / "fixture.json").write_text(json.dumps(payload), encoding="utf-8")
+    loaded = load_fixture(fixture_dir)
+    assert loaded.fixture.scoring.gap_match_threshold == 0.75

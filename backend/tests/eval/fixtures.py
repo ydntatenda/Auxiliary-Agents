@@ -65,13 +65,22 @@ class GoldenGap(BaseModel):
 
 
 class FixtureScoring(BaseModel):
-    """Per-fixture scoring expectations. All thresholds inline."""
+    """Per-fixture scoring expectations. All thresholds inline.
+
+    `gap_match_threshold` is the fraction of a golden gap's keywords that
+    must hit (case-insensitive substring) in an extracted gap's
+    description for the gap to be considered matched. Default 0.5
+    accepts roughly half the keywords, which absorbs paraphrase without
+    pretending strict keyword conjunction. A value of 1.0 reproduces the
+    original strict behaviour.
+    """
 
     step_count_band: tuple[int, int]
     expected_steps: list[GoldenStep] = Field(default_factory=list)
     expected_gaps: list[GoldenGap] = Field(default_factory=list)
     gap_recall_threshold: float = 0.8
     gap_severity_threshold: float = 0.8
+    gap_match_threshold: float = 0.5
     terminal_threshold: float = 0.8
     decision_rule_threshold: float = 0.8
 

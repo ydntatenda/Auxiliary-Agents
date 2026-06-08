@@ -14,9 +14,14 @@ Invocation, from the backend/ directory:
 
     python -m tests.eval.runner tests/fixtures/citation_appeals
     python -m tests.eval.runner tests/fixtures/
+    python -m tests.eval.runner --show-gaps tests/fixtures/citation_appeals
 
 The first runs one fixture. The second walks the directory, runs every
-fixture.json under it, and stacks the reports.
+fixture.json under it, and stacks the reports. The `--show-gaps` flag is
+order-agnostic and prints every gap the extractor surfaced for each
+fixture, verbatim, between the fixture header and the axis lines, so a
+reviewer can tell whether a missed golden gap was genuinely absent or
+just paraphrased away from the keywords.
 """
 from __future__ import annotations
 
@@ -32,7 +37,7 @@ from .fixtures import (
     build_assembled_transcript,
     discover_fixtures,
 )
-from .report import EvalReport, format_report
+from .report import EvalReport, ExtractedGapView, format_report
 from .scorers import all_scorers
 
 
@@ -46,7 +51,19 @@ async def run_one(loaded: LoadedFixture) -> EvalReport:
     results = [
         scorer(extracted, loaded.fixture.scoring) for scorer in all_scorers()
     ]
-    return EvalReport(fixture_id=loaded.fixture.id, results=results)
+    extracted_gaps = [
+        ExtractedGapView(
+            description=gap.description,
+            severity=gap.severity,
+            step_id=gap.step_id,
+        )
+        for gap in extracted.gaps
+    ]
+    return EvalReport(
+        fixture_id=loaded.fixture.id,
+        results=results,
+        extracted_gaps=extracted_gaps,
+    )
 
 
 async def run_all(loaded: list[LoadedFixture]) -> list[EvalReport]:
@@ -58,9 +75,13 @@ async def run_all(loaded: list[LoadedFixture]) -> list[EvalReport]:
 
 def main(argv: list[str] | None = None) -> int:
     args = list(argv if argv is not None else sys.argv[1:])
+    show_gaps = False
+    if "--show-gaps" in args:
+        show_gaps = True
+        args = [arg for arg in args if arg != "--show-gaps"]
     if len(args) != 1:
         print(
-            "usage: python -m tests.eval.runner <fixture-path-or-directory>",
+            "usage: python -m tests.eval.runner [--show-gaps] <fixture-path-or-directory>",
             file=sys.stderr,
         )
         return 2
@@ -79,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
     for index, report in enumerate(reports):
         if index > 0:
             print()
-        print(format_report(report))
+        print(format_report(report, show_gaps=show_gaps))
         if not report.passed:
             overall_pass = False
     print()

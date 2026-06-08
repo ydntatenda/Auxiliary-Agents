@@ -50,6 +50,7 @@ def _scoring(
     gaps: list[GoldenGap] | None = None,
     gap_recall_threshold: float = 0.8,
     gap_severity_threshold: float = 0.8,
+    gap_match_threshold: float = 0.5,
     terminal_threshold: float = 0.8,
     decision_rule_threshold: float = 0.8,
 ) -> FixtureScoring:
@@ -60,6 +61,7 @@ def _scoring(
         expected_gaps=gaps or [],
         gap_recall_threshold=gap_recall_threshold,
         gap_severity_threshold=gap_severity_threshold,
+        gap_match_threshold=gap_match_threshold,
         terminal_threshold=terminal_threshold,
         decision_rule_threshold=decision_rule_threshold,
     )
@@ -179,6 +181,133 @@ def test_gap_no_expected_gaps_skips() -> None:
     result = scorers.score_gap_recall_severity(wf, scoring)
     assert result.skipped is True
     assert result.passed is True
+
+
+def test_gap_partial_overlap_matches_at_default_threshold() -> None:
+    """Default threshold 0.5 accepts two of three keyword hits."""
+    wf = _wf(
+        gaps=[
+            Gap(
+                id="g1",
+                description="Reduce decisions lack written criteria for the boundary.",
+                severity="critical",
+            )
+        ]
+    )
+    scoring = _scoring(
+        gaps=[
+            GoldenGap(
+                concept="reduction_criteria",
+                keywords=["reduce", "criteria", "dismiss"],
+                severity="critical",
+            )
+        ]
+    )
+    result = scorers.score_gap_recall_severity(wf, scoring)
+    assert result.details["matched"] == 1
+    per_gap = result.details["per_gap"][0]
+    assert per_gap["matched"] is True
+    assert per_gap["matched_keywords"] == ["reduce", "criteria"]
+    assert per_gap["overlap"] == round(2 / 3, 3)
+
+
+def test_gap_partial_overlap_below_threshold_misses() -> None:
+    """Threshold 0.75 requires three of four keywords; two hits is not enough."""
+    wf = _wf(
+        gaps=[
+            Gap(
+                id="g1",
+                description="Reduce decisions need clearer criteria documentation.",
+                severity="critical",
+            )
+        ]
+    )
+    scoring = _scoring(
+        gaps=[
+            GoldenGap(
+                concept="reduction_criteria",
+                keywords=["reduce", "criteria", "dismiss", "uphold"],
+                severity="critical",
+            )
+        ],
+        gap_match_threshold=0.75,
+    )
+    result = scorers.score_gap_recall_severity(wf, scoring)
+    assert result.details["matched"] == 0
+    per_gap = result.details["per_gap"][0]
+    assert per_gap["matched"] is False
+    assert per_gap["closest_hits"] == ["reduce", "criteria"]
+    assert any("closest extracted gap" in m for m in result.messages)
+
+
+def test_gap_threshold_one_reproduces_strict_conjunction() -> None:
+    """gap_match_threshold = 1.0 means every keyword must hit (old behaviour).
+
+    The same description would match at the default 0.5 threshold (two of
+    three keywords), so this test specifically pins the strict bar.
+    """
+    wf = _wf(
+        gaps=[
+            Gap(
+                id="g1",
+                description="Reduce decisions lack written criteria for the boundary.",
+                severity="critical",
+            )
+        ]
+    )
+    golden = GoldenGap(
+        concept="reduction_criteria",
+        keywords=["reduce", "criteria", "dismiss"],
+        severity="critical",
+    )
+    # Strict: misses, because "dismiss" is not in the description.
+    strict = _scoring(gaps=[golden], gap_match_threshold=1.0)
+    strict_result = scorers.score_gap_recall_severity(wf, strict)
+    assert strict_result.details["matched"] == 0
+
+    # Default 0.5: matches, two of three keywords present.
+    loose = _scoring(gaps=[golden])
+    loose_result = scorers.score_gap_recall_severity(wf, loose)
+    assert loose_result.details["matched"] == 1
+
+
+def test_gap_picks_best_overlap_when_multiple_candidates() -> None:
+    """When several extracted gaps partially match, the highest-overlap one wins."""
+    wf = _wf(
+        gaps=[
+            Gap(
+                id="g_weak",
+                description="Dismissal happens automatically on plate mismatch.",
+                severity="minor",
+            ),
+            Gap(
+                id="g_strong",
+                description="The reduce-versus-dismiss boundary lacks written criteria.",
+                severity="critical",
+            ),
+        ]
+    )
+    scoring = _scoring(
+        gaps=[
+            GoldenGap(
+                concept="reduction_criteria",
+                keywords=["reduce", "criteria", "dismiss"],
+                severity="critical",
+            )
+        ]
+    )
+    result = scorers.score_gap_recall_severity(wf, scoring)
+    per_gap = result.details["per_gap"][0]
+    assert per_gap["matched"] is True
+    # All three keywords hit on g_strong; only one on g_weak.
+    assert sorted(per_gap["matched_keywords"]) == ["criteria", "dismiss", "reduce"]
+    assert per_gap["overlap"] == 1.0
+
+
+def test_gap_match_threshold_loads_default_value() -> None:
+    """Existing fixtures without the field still validate at 0.5 default."""
+    scoring = _scoring()
+    assert scoring.gap_match_threshold == 0.5
 
 
 # -- terminal_correctness -------------------------------------------

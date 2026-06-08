@@ -76,17 +76,17 @@
     "expected_gaps": [
       {
         "concept": "reduction_criteria_undefined",
-        "keywords": ["reduce", "criteria"],
+        "keywords": ["reduce", "criteria", "dismiss"],
         "severity": "critical"
       },
       {
         "concept": "late_appeal_discretion",
-        "keywords": ["late", "case-by-case"],
+        "keywords": ["late", "case-by-case", "documentation"],
         "severity": "important"
       },
       {
         "concept": "second_level_eligibility_new_information",
-        "keywords": ["second", "new information"],
+        "keywords": ["second", "new information", "level"],
         "severity": "important"
       },
       {
@@ -96,12 +96,12 @@
       },
       {
         "concept": "system_unavailable_recovery",
-        "keywords": ["system", "unavailable"],
+        "keywords": ["system", "unavailable", "AIMS"],
         "severity": "minor"
       },
       {
         "concept": "sla_holiday_variance",
-        "keywords": ["holiday", "SLA"],
+        "keywords": ["holiday", "SLA", "Institute"],
         "severity": "minor"
       }
     ]

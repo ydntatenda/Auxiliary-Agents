@@ -3,11 +3,30 @@
 The renderer aims for one fixed-width line per axis, with the optional
 per-axis messages indented underneath, so a multi-fixture run stacks
 cleanly. Everything here is pure formatting; no I/O.
+
+When `format_report` is called with `show_gaps=True`, the rendered
+output gains a diagnostic block listing every gap the extractor
+actually surfaced, with severity and verbatim description, before the
+axis lines. This is so a reviewer can see whether a missed gap was
+genuinely not surfaced or was surfaced in different words.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
+
+
+@dataclass
+class ExtractedGapView:
+    """A single gap exactly as the extractor returned it.
+
+    Carried on `EvalReport` so the diagnostic dump can render without
+    plumbing the original Workflow through the renderer.
+    """
+
+    description: str
+    severity: str
+    step_id: str | None = None
 
 
 @dataclass
@@ -34,6 +53,7 @@ class ScorerResult:
 class EvalReport:
     fixture_id: str
     results: list[ScorerResult]
+    extracted_gaps: list[ExtractedGapView] = field(default_factory=list)
 
     @property
     def passed(self) -> bool:
@@ -92,8 +112,24 @@ def _axis_extras(result: ScorerResult) -> str:
     return ""
 
 
-def format_report(report: EvalReport) -> str:
+def format_gap_dump(report: EvalReport) -> str:
+    """Render the diagnostic block listing every extractor-surfaced gap.
+
+    A quiet extractor produces a distinct line so its silence does not
+    look like the absence of the flag itself.
+    """
+    if not report.extracted_gaps:
+        return "  Extractor surfaced no gaps."
+    lines = [f"  Extractor surfaced {len(report.extracted_gaps)} gaps:"]
+    for view in report.extracted_gaps:
+        lines.append(f'    [{view.severity}] "{view.description}"')
+    return "\n".join(lines)
+
+
+def format_report(report: EvalReport, *, show_gaps: bool = False) -> str:
     lines = [f"Fixture: {report.fixture_id}"]
+    if show_gaps:
+        lines.append(format_gap_dump(report))
     for result in report.results:
         lines.append(_format_axis_line(result))
         for message in result.messages:
