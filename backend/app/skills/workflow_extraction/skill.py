@@ -51,6 +51,31 @@ Guidelines:
   the original capture modality after extraction.
 - Set source_transcript to the transcript exactly as provided.
 
+Step kind:
+- Classify each step's kind as one of: procedure, exception, policy, handoff.
+  This is a positive classification, not a filter. Include the step in the
+  graph and label it; misclassification is recoverable later by the
+  clarification stage, omission is not.
+- procedure: a step the operator performs in the normal sequence of work.
+  Generic example: "Verify the customer's identity against the order record."
+- exception: a step that runs only when a specific trigger described in the
+  transcript fires. Real operator action, real trigger, off the main flow.
+  Generic example: "When the address on the package does not match the
+  order, open a customer-clarification ticket and place the shipment on
+  hold."
+- policy: an eligibility or constraint rule the operator applies rather than
+  an action they perform. A statement about who is or is not allowed, or
+  about a limit or threshold.
+  Generic example: "External applicants are not eligible for the same-day
+  service tier."
+- handoff: work the transcript explicitly attributes to someone other than
+  this operator (a sibling team, an automated system, an external party).
+  The transcript may say something like "that goes to X, not me".
+  Generic example: "Complaints about delivery are routed to the carrier
+  support desk, not handled here."
+- Default to procedure when the operator describes themself performing the
+  action in the normal sequence.
+
 Terminal steps:
 - Set `terminal: true` on every step that ends a path through the workflow.
   Default these step types to terminal:
@@ -115,42 +140,68 @@ async def extract_workflow(name: str, unit: str, transcript: str) -> Workflow:
 def _correct_terminals(workflow: Workflow) -> Workflow:
     """Set every step's terminal flag to match the structural invariant.
 
-    A step is terminal iff it has no outbound decision_rule target and no
-    other step in the workflow has a higher order. The pass rebuilds any
-    step whose `terminal` value disagrees with the invariant, through
-    Pydantic model_copy, and rebuilds the workflow with the updated step
-    list. The two directions are symmetric: false positives are demoted
-    (a step marked terminal that has a successor), and the structurally
-    terminal step is promoted to terminal (the highest-order step with no
-    outbound rules, even when the extractor left it non-terminal). There
-    is no semantic judgement; both sides are pure structure.
+    A procedure step is terminal iff it has no outbound decision_rule
+    target and no other procedure step has a higher order. The pass
+    rebuilds any step whose `terminal` value disagrees with the
+    invariant, through Pydantic model_copy.
 
-    Known limitation. In a genuine multi-terminal workflow with two or
-    more legitimately-terminal steps at different orders (an approve
-    branch ends at step 5, a deny branch ends at step 7), the rule has
-    two failures rooted in the same single-terminal assumption:
+    The procedure-step filter is the load-bearing addition. Without it,
+    an exception, policy, or handoff step at a higher order than the
+    real procedural terminal would block promotion of the procedure
+    terminal and would itself get crowned, which is the
+    terminal-displacement defect the kind field exists to fix. Filtering
+    promotion candidates to kind == "procedure" lets the structurally
+    final procedure step become terminal regardless of where the
+    non-procedure steps sit in the order.
 
-    - On the demote side, the earlier real terminal is wrongly demoted
-      because a higher-order step exists.
-    - On the promote side, only the highest-order step is crowned, so
-      one of the real terminals is left non-terminal.
+    Non-procedure steps (exception, policy, handoff) keep whatever
+    terminal flag the extractor set, with one structural exception: a
+    step with outbound decision_rules cannot be terminal regardless of
+    kind, because "terminal" means "no continuation" and outbound rules
+    specify continuation. So a non-procedure step with outbound rules is
+    demoted if currently marked terminal; otherwise its flag is left
+    alone.
 
-    The rule is correct for single-terminal workflows like the citation
-    appeals fixture. When a multi-terminal fixture arrives,
+    Known limitation. The single-terminal assumption still holds in
+    both directions for procedure steps. In a genuine multi-terminal
+    workflow with two or more legitimately-terminal procedure steps at
+    different orders (an approve branch ends at step 5, a deny branch
+    ends at step 7), the rule still has the same two failures:
+
+    - On the demote side, the earlier real procedure terminal is
+      wrongly demoted because a higher-order procedure step exists.
+    - On the promote side, only the highest-order procedure step is
+      crowned, so one of the real procedure terminals is left
+      non-terminal.
+
+    The rule is correct for single-terminal workflows like the
+    citation appeals fixture. When a multi-terminal fixture arrives,
     terminal_correctness on that fixture will regress and the rule
     refines then, rather than silently mis-scoring the fixture now.
     """
     if not workflow.steps:
         return workflow
-    max_order = max(step.order for step in workflow.steps)
+
+    procedure_steps = [step for step in workflow.steps if step.kind == "procedure"]
+    max_procedure_order: int | None = (
+        max(step.order for step in procedure_steps) if procedure_steps else None
+    )
+
     new_steps: list = []
     changed = False
     for step in workflow.steps:
         has_outbound_target = any(
             rule.then_step_id for rule in step.decision_rules
         )
-        has_higher_order = step.order < max_order
-        should_be_terminal = not has_outbound_target and not has_higher_order
+        if step.kind == "procedure" and max_procedure_order is not None:
+            has_higher_procedure = step.order < max_procedure_order
+            should_be_terminal = (
+                not has_outbound_target and not has_higher_procedure
+            )
+        else:
+            # Non-procedure: keep the extractor's flag unless it conflicts
+            # with outbound rules.
+            should_be_terminal = step.terminal and not has_outbound_target
         if step.terminal == should_be_terminal:
             new_steps.append(step)
             continue

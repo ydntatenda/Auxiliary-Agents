@@ -22,6 +22,7 @@ class Step(BaseModel):
     order: int
     title: str = Field(..., description="Short imperative title")
     description: str
+    kind: Literal["procedure", "exception", "policy", "handoff"] = "procedure"
     executor: Literal["human", "agent", "hybrid"] = "human"
     inputs: list[str] = Field(default_factory=list)
     outputs: list[str] = Field(default_factory=list)
