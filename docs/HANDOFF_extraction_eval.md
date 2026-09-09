@@ -4,10 +4,10 @@ For Dubem. This covers what landed on `main` over the last session so you can or
 
 ## Getting in
 
-Repo: https://github.com/ydntatenda/Auxiliary-Agents (private; accept the collaborator invite first or the link will 404).
+Repo: https://github.com/ydntatenda/uropi
 
-    git clone https://github.com/ydntatenda/Auxiliary-Agents.git
-    cd Auxiliary-Agents
+    git clone https://github.com/ydntatenda/uropi.git
+    cd uropi
 
 You will need your own OpenAI key to run the eval against the real extractor. Put it in `backend/.env.local` as `OPENAI_API_KEY=sk-...`. Mine is not in the repo (it is gitignored, by design), so bring your own. The offline test suite runs without any key.
 

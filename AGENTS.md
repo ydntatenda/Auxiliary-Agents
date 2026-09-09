@@ -4,7 +4,7 @@ Guide for LLM agents working in this repo. Read this first.
 
 ## What this project is
 
-**Agentic Ops MVP** turns an employee's walkthrough (text, voice, or screen recording) into a structured workflow graph, then into a polished SOP markdown document. The first target user is Georgia Tech Parking & Transportation; the domain is citation appeal processing.
+**Uropi** turns organisational evidence into workflow intelligence. It captures an employee's walkthrough, builds a structured workflow graph and SOP, extracts worker-confirmed capability profiles from CVs, and produces evidence-backed automation and role-transition recommendations. The first target user is Georgia Tech Parking & Transportation; the domain is citation appeal processing.
 
 The pipeline is linear:
 
@@ -54,6 +54,8 @@ When editing or extending a skill, read its `SKILL.md` first. Each one documents
 - [`voice_transcription/SKILL.md`](backend/app/skills/voice_transcription/SKILL.md)
 - [`screen_analysis/SKILL.md`](backend/app/skills/screen_analysis/SKILL.md)
 - [`diagram_review/SKILL.md`](backend/app/skills/diagram_review/SKILL.md)
+- [`workforce_profile/SKILL.md`](backend/app/skills/workforce_profile/SKILL.md)
+- [`organisational_assessment/SKILL.md`](backend/app/skills/organisational_assessment/SKILL.md)
 
 ## State machine
 

@@ -3,12 +3,13 @@
 Read this first, every session. These are non-negotiable. If a change would
 break one, stop and surface the conflict instead of proceeding.
 
-## What Modus is
+## What Uropi is
 
-Modus turns how a team actually does a recurring task into a structured
-workflow graph, then renders surfaces from that one graph. Today the shipped
-pipeline is capture → extract → clarify → review/diagram → SOP. First
-production target: Georgia Tech Parking & Transportation, citation appeals.
+Uropi turns organisational evidence into a governed operating model. The
+workflow pipeline is capture → extract → clarify → review/diagram → SOP. The
+workforce layer adds sourced CV extraction, worker confirmation, automation
+assessment and human-reviewed role-transition options. First production
+target: Georgia Tech Parking & Transportation, citation appeals.
 
 The full architectural rationale lives in `AGENTS.md` and the per-skill
 `backend/app/skills/*/SKILL.md` files. Read the relevant ones before editing

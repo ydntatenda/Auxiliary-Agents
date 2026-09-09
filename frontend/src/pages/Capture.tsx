@@ -246,7 +246,7 @@ export default function Capture({ currentUser, onCaptured, updateContext }: Prop
           </div>
           <h1 className="page-title">Name the workflow you are capturing.</h1>
           <p className="page-sub">
-            Modus turns a recurring task into a structured workflow graph.
+            Uropi turns a recurring task into a structured workflow graph.
             Tell us what this is, who runs it, and your relationship to it.
             You will add sources of any kind in the next step.
           </p>
@@ -344,7 +344,7 @@ export default function Capture({ currentUser, onCaptured, updateContext }: Prop
         <p className="page-sub">
           {inUpdateMode
             ? "Add sources covering only what changed. We will run a scoped delta against the current graph when you hit extract."
-            : "Sources can be text you type, a voice walkthrough, a screen recording, a document, or a short guided Q&A. Add as many as you need. They assemble in order into one transcript that Modus reads next."}
+            : "Sources can be text you type, a voice walkthrough, a screen recording, a document, or a short guided Q&A. Add as many as you need. They assemble in order into one transcript that Uropi reads next."}
         </p>
 
         <div className="source-list">

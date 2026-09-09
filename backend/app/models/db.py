@@ -176,3 +176,54 @@ class ClarificationHistoryRow(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class WorkerProfileRow(Base):
+    __tablename__ = "worker_profiles"
+    __table_args__ = (
+        UniqueConstraint("member_id", name="uq_worker_profiles_member"),
+        CheckConstraint(
+            "status IN ('draft','confirmed')",
+            name="ck_worker_profiles_status",
+        ),
+    )
+
+    id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    member_id: Mapped[str] = mapped_column(Text, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    current_role: Mapped[str | None] = mapped_column(Text)
+    summary: Mapped[str | None] = mapped_column(Text)
+    skills: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    experience: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    qualifications: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    career_preferences: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    provenance: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    source_filename: Mapped[str | None] = mapped_column(Text)
+    source_path: Mapped[str | None] = mapped_column(Text)
+    source_text: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="draft")
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class OrganisationalAssessmentRow(Base):
+    __tablename__ = "organisational_assessments"
+    __table_args__ = (
+        Index("idx_assessments_workflow_created", "workflow_id", "created_at"),
+    )
+
+    id: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    workflow_id: Mapped[PyUUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False
+    )
+    workflow_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    report: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_by: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

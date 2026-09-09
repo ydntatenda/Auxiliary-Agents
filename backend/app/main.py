@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
+    assessments,
     auth,
     capture,
     clarify,
@@ -11,6 +12,7 @@ from app.api import (
     review,
     sop,
     workflows,
+    workforce,
 )
 from app.config import get_settings
 from app.skills.workflow_clarification import active_clarification_model
@@ -18,7 +20,7 @@ from app.skills.workflow_clarification import active_clarification_model
 
 settings = get_settings()
 
-app = FastAPI(title="Agentic Ops MVP", version="0.2.0")
+app = FastAPI(title="Uropi API", version="0.3.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,6 +39,8 @@ app.include_router(workflows.router)
 app.include_router(clarify.router)
 app.include_router(review.router)
 app.include_router(sop.router)
+app.include_router(workforce.router)
+app.include_router(assessments.router)
 
 
 @app.get("/health")
