@@ -109,6 +109,222 @@ button {
   color: var(--muted);
 }
 
+.product-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  margin-right: 24px;
+}
+
+.product-nav button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 9px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.product-nav button.active {
+  color: var(--ink);
+  background: var(--paper-2);
+}
+
+.people-upload {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  padding: 20px;
+  margin-bottom: 12px;
+}
+
+.people-upload-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+
+.people-upload-copy span,
+.privacy-note,
+.profile-head p,
+.profile-summary {
+  color: var(--muted);
+}
+
+.privacy-note {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  margin-bottom: 28px;
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.profile-card,
+.assessment-panel {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: 22px;
+}
+
+.profile-head,
+.assessment-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.profile-head h2,
+.assessment-head h2 {
+  margin: 8px 0 2px;
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.profile-head p,
+.profile-summary {
+  margin: 0 0 16px;
+}
+
+.skill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.skill-list span {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  padding: 4px 7px;
+  font-size: 11px;
+}
+
+.profile-source {
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+
+.profile-editor,
+.profile-editor label {
+  display: grid;
+  gap: 8px;
+}
+
+.profile-editor {
+  gap: 14px;
+}
+
+.assessment-panel {
+  margin-top: 20px;
+}
+
+.assessment-empty {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.assessment-empty h2,
+.assessment-empty p {
+  margin: 0 0 4px;
+}
+
+.assessment-summary {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  line-height: 1.55;
+}
+
+.opportunity-list {
+  border-top: 1px solid var(--line);
+  margin-top: 20px;
+}
+
+.opportunity {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 16px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.opportunity-score {
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+}
+
+.opportunity h3,
+.opportunity p,
+.assessment-section h3,
+.role-transition p {
+  margin: 3px 0 7px;
+}
+
+.control-line {
+  display: flex;
+  gap: 6px;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.assessment-section {
+  margin-top: 24px;
+}
+
+.assessment-section > h3 {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.role-transition {
+  border-left: 2px solid var(--accent);
+  padding: 10px 14px;
+  background: var(--paper);
+  margin-top: 10px;
+}
+
+.assessment-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 24px;
+}
+
+.assessment-list {
+  border: 1px solid var(--line);
+  padding: 14px;
+}
+
+.assessment-list h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.assessment-list ol {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .topbar-right .meta {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -2444,5 +2660,16 @@ textarea.text-input {
   .topbar-right,
   .subbar .right {
     display: none;
+  }
+
+  .profile-grid,
+  .assessment-columns,
+  .assessment-empty {
+    grid-template-columns: 1fr;
+  }
+
+  .people-upload {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

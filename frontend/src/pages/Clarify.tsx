@@ -92,7 +92,7 @@ export default function Clarify({ workflowId, onReadyForSop }: Props) {
             : question || (loading ? "Preparing the next clarification question..." : "No question returned.")}
         </h1>
         <p className="clar-hint">
-          Answer only the question shown. Modus will patch the graph, resolve the gap, and ask the
+          Answer only the question shown. Uropi will patch the graph, resolve the gap, and ask the
           next question until the graph is ready or the eight-question cap is reached.
         </p>
 

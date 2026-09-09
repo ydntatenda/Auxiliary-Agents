@@ -33,6 +33,7 @@ import CollaboratorPanel from "../components/CollaboratorPanel";
 import DiagramView from "../components/DiagramView";
 import ScopePanel from "../components/ScopePanel";
 import VersionTimeline from "../components/VersionTimeline";
+import AssessmentPanel from "../components/AssessmentPanel";
 
 type Props = {
   user: CurrentUser;
@@ -690,6 +691,7 @@ function Detail({
                   onToggleStep={onToggleStep}
                   onClear={onClearSelection}
                 />
+                <AssessmentPanel workflowId={workflowId} />
                 <VersionTimeline versions={detail.versions} />
               </div>
               <aside className="detail-side">

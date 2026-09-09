@@ -1,7 +1,7 @@
 [project]
-name = "agentic-ops-backend"
-version = "0.1.0"
-description = "Agentic Ops MVP backend"
+name = "uropi-backend"
+version = "0.3.0"
+description = "Uropi organisational intelligence backend"
 requires-python = ">=3.11"
 dependencies = [
   "alembic>=1.13",

@@ -3,7 +3,7 @@
 Update-time companion to `workflow_extraction`. Where the first extraction
 reads a transcript with no prior graph, delta extraction reads a transcript
 WITH the existing graph as context and must respect a declared scope: the
-operator tells Modus which steps this update touches.
+operator tells Uropi which steps this update touches.
 
 ## Public surface
 

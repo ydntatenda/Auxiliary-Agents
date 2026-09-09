@@ -425,3 +425,105 @@ export async function deltaExtract(workflowId: string, scope: DeltaScope) {
     body: JSON.stringify(scope),
   });
 }
+
+// Workforce ------------------------------------------------------------
+
+export type EvidenceRef = { source: string; excerpt: string };
+export type SkillClaim = {
+  name: string;
+  level: "foundational" | "working" | "advanced" | "expert";
+  evidence: EvidenceRef[];
+};
+export type WorkerProfile = {
+  id: string;
+  member_id: string;
+  name: string;
+  current_role: string | null;
+  summary: string | null;
+  skills: SkillClaim[];
+  experience: Array<Record<string, unknown>>;
+  qualifications: Array<Record<string, unknown>>;
+  career_preferences: string[];
+  provenance: Array<Record<string, unknown>>;
+  source_filename: string | null;
+  status: "draft" | "confirmed";
+  confirmed_at: string | null;
+  updated_at: string;
+};
+
+export async function listWorkerProfiles() {
+  return request<WorkerProfile[]>("/workers");
+}
+
+export async function uploadWorkerCv(file: File, memberId?: string) {
+  const body = new FormData();
+  body.append("file", file, file.name);
+  if (memberId) body.append("member_id", memberId);
+  return request<WorkerProfile>("/workers/cv", { method: "POST", body });
+}
+
+export async function updateWorkerProfile(
+  memberId: string,
+  patch: Partial<Pick<WorkerProfile, "name" | "current_role" | "summary" | "skills" | "experience" | "qualifications" | "career_preferences">>,
+) {
+  return request<WorkerProfile>(`/workers/${memberId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function confirmWorkerProfile(memberId: string) {
+  return request<WorkerProfile>(`/workers/${memberId}/confirm`, { method: "POST" });
+}
+
+export type AutomationOpportunity = {
+  step_id: string;
+  step_title: string;
+  disposition: "human" | "assist" | "automate_with_approval" | "automate";
+  automation_score: number;
+  rationale: string;
+  evidence: string[];
+  required_capabilities: string[];
+  controls: string[];
+};
+export type OrganisationalAssessment = {
+  workflow_id: string;
+  executive_summary: string;
+  current_state_risks: string[];
+  opportunities: AutomationOpportunity[];
+  gaps: Array<{ description: string; severity: string; evidence: string[]; proposed_resolution: string }>;
+  role_transitions: Array<{
+    worker_id: string;
+    worker_name: string;
+    current_role: string | null;
+    proposed_role: string;
+    retained_responsibilities: string[];
+    removed_or_assisted_tasks: string[];
+    new_responsibilities: string[];
+    transferable_skills: string[];
+    development_needs: string[];
+    evidence: string[];
+    requires_human_review: boolean;
+  }>;
+  future_workflow: string[];
+  knowledge_updates: string[];
+  success_metrics: string[];
+  deployment_prerequisites: string[];
+};
+export type AssessmentRecord = {
+  id: string;
+  workflow_id: string;
+  workflow_version: number;
+  report: OrganisationalAssessment;
+  created_by: string;
+  created_at: string;
+};
+
+export async function getAssessment(workflowId: string) {
+  return request<AssessmentRecord | null>(`/workflows/${workflowId}/assessment`);
+}
+
+export async function createAssessment(workflowId: string) {
+  return request<AssessmentRecord>(`/workflows/${workflowId}/assessment`, { method: "POST" });
+}

@@ -1,11 +1,18 @@
-# Auxiliary Agents
+# Uropi
 
-**Capture an operational walkthrough. Get back a structured workflow graph and a polished SOP.**
+**Map how an organisation works, identify what should change, and redesign work around people and agents.**
 
-A typed pipeline that turns how an employee actually does a recurring task — described by text, voice, or screen recording — into a machine-readable workflow graph, then into a clean Standard Operating Procedure. First production target: Georgia Tech Parking & Transportation citation appeals.
+Uropi turns operational evidence into a living organisational model. It captures recurring work, builds workflow graphs, identifies gaps and automation opportunities, creates evidence-backed worker profiles from CVs, proposes safer future workflows and renders updated operating knowledge. First production target: Georgia Tech Parking & Transportation citation appeals.
 
 ```
 capture (text / voice / screen) → transcribe → extract graph → clarify → render SOP
+```
+
+The workforce-intelligence layer adds a second governed loop:
+
+```
+CV or resume → sourced draft profile → worker confirmation → workflow assessment
+→ automation opportunities → role transition options → knowledge updates
 ```
 
 - **Capture**: paste a typed walkthrough, record a voice narration, or record your screen + mic.
@@ -13,6 +20,8 @@ capture (text / voice / screen) → transcribe → extract graph → clarify →
 - **Extract**: structured-output LLM call turns the transcript into a typed `Workflow` graph (steps, inputs/outputs, decision rules, gaps).
 - **Clarify**: an Agents-SDK clarification loop asks targeted questions about gaps and patches the graph in place through a typed tool surface.
 - **Render**: GPT writes a markdown SOP from the finalized graph.
+- **Profile**: PDF and DOCX CVs become editable profiles with claim-level evidence.
+- **Assess**: Uropi scores automation opportunities, proposes human-agent controls and surfaces role transition options that always require human review.
 
 Architecture rules and per-skill design notes live in [AGENTS.md](AGENTS.md) and the `SKILL.md` file inside each `backend/app/skills/*/` folder.
 
@@ -42,8 +51,8 @@ You will need API keys for at least:
 
 ```bash
 # 1. Clone
-git clone https://github.com/<your-username>/Auxiliary-Agents.git
-cd Auxiliary-Agents
+git clone https://github.com/<your-username>/uropi.git
+cd uropi
 
 # 2. Create a local secrets file (gitignored)
 cp backend/.env.example backend/.env.local

@@ -10,9 +10,10 @@ import Capture from "./pages/Capture";
 import Clarify from "./pages/Clarify";
 import Library from "./pages/Library";
 import Processing from "./pages/Processing";
+import People from "./pages/People";
 import Sop from "./pages/Sop";
 
-type Stage = "library" | "capture" | "processing" | "clarify" | "sop";
+type Stage = "library" | "people" | "capture" | "processing" | "clarify" | "sop";
 
 export type UpdateContext = {
   workflowId: string;
@@ -85,7 +86,13 @@ export default function App() {
 
   return (
     <main className="app">
-      <Topbar user={user} onOpenWorkflow={openWorkflowInDetail} />
+      <Topbar
+        user={user}
+        onOpenWorkflow={openWorkflowInDetail}
+        onOpenLibrary={() => setStage("library")}
+        onOpenPeople={() => setStage("people")}
+        active={stage === "people" ? "people" : "workflows"}
+      />
       <Subbar stage={stage} workflowId={workflowId} onBack={backToLibrary} />
 
       {stage === "library" && user && (
@@ -104,6 +111,7 @@ export default function App() {
           </div>
         </div>
       )}
+      {stage === "people" && user && <People user={user} />}
       {stage === "capture" && user && (
         <Capture
           currentUser={user}

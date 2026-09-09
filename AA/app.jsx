@@ -2,7 +2,7 @@
 const { useState, useEffect, useRef, useMemo } = React;
 
 /* ============================================================
-   Modus — v1 capture-to-SOP loop
+   Uropi — v1 capture-to-SOP loop
    GT Parking & Transportation, Weekend Appeal Workflow
    ============================================================ */
 
@@ -65,7 +65,7 @@ function Topbar({ dept = "GT — Parking & Transportation" }) {
     <div className="topbar">
       <div className="brand">
         <div className="mark" />
-        <div className="name">Modus</div>
+        <div className="name">Uropi</div>
         <div className="dept">{dept}</div>
       </div>
       <div className="topbar-right">
@@ -121,7 +121,7 @@ function ScreenCapture({ state, setState, onNext }) {
             <span className="num">01 / 04</span>
             <span>Capture</span>
           </div>
-          <h1 className="page-title">Tell Modus how this workflow gets done.</h1>
+          <h1 className="page-title">Tell Uropi how this workflow gets done.</h1>
           <p className="page-sub">
             Any modality is fine — voice, documents, screen recording, or typed. The extraction model
             reads everything you provide, then asks clarifying questions to fill the gaps.
@@ -199,7 +199,7 @@ function ScreenCapture({ state, setState, onNext }) {
                   {state.modality === "text" && (
                     <textarea
                       className="text-input"
-                      placeholder="Walk through what happens, step by step. Don't worry about structure — Modus will ask follow-up questions to fill in gaps."
+                      placeholder="Walk through what happens, step by step. Don't worry about structure — Uropi will ask follow-up questions to fill in gaps."
                       value={state.text}
                       onChange={(e) => setState({ ...state, text: e.target.value })}
                     />
@@ -545,7 +545,7 @@ function ScreenClarify({ onDone }) {
                 ))}
               </div>
               <div className="clar-actions">
-                <span>Modus is filling in the workflow graph as you answer.</span>
+                <span>Uropi is filling in the workflow graph as you answer.</span>
                 <span style={{marginLeft: "auto"}}>
                   <button className="btn btn-ghost">Skip — I'm not sure</button>
                 </span>
